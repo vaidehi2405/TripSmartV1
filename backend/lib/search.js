@@ -1,4 +1,5 @@
 const { getJson } = require("serpapi");
+const { normalizeAirportId } = require("./airportCodes");
 
 function debugLog(runId, hypothesisId, location, message, data) {
   // #region agent log
@@ -110,19 +111,6 @@ async function serpapiGetJson(params) {
   return json;
 }
 
-function normalizeAirportId(value) {
-  const raw = String(value || "").trim();
-  const upper = raw.toUpperCase();
-  if (/^[A-Z]{3}$/.test(upper)) return upper;
-
-  // Minimal city-to-IATA normalization for current test scenario.
-  const cityToIata = {
-    NAGPUR: "NAG",
-    GOA: "GOI",
-  };
-  return cityToIata[upper] || raw;
-}
-
 async function searchFlights(origin, destination, date, travelers, preferences) {
   if (process.env.USE_MOCK === "true") {
     const { getMockFlights } = require("./mockData.js");
@@ -146,8 +134,8 @@ async function searchFlights(origin, destination, date, travelers, preferences) 
     const adults = Number(travelers);
     if (!Number.isFinite(adults) || adults <= 0) return [];
 
-    const departureId = normalizeAirportId(origin);
-    const arrivalId = normalizeAirportId(destination);
+    const departureId = normalizeAirportId(prefs.originCode || origin);
+    const arrivalId = normalizeAirportId(prefs.destinationCode || destination);
 
     const params = {
       engine: "google_flights",
@@ -233,6 +221,9 @@ async function searchFlights(origin, destination, date, travelers, preferences) 
       const airline = firstSeg?.airline || "";
 
       const price = asNumber(itinerary?.price);
+      // SerpApi returns the total price for all adults.
+      // We divide by the traveler count (adults) to get the price per person to prevent double-counting.
+      const pricePerPerson = price ? price / adults : 0;
       const stops = Array.isArray(itinerary?.layovers)
         ? itinerary.layovers.length
         : 0;
@@ -240,7 +231,7 @@ async function searchFlights(origin, destination, date, travelers, preferences) 
 
       mapped.push({
         airline,
-        price: price ?? 0,
+        price: pricePerPerson,
         departureTime: timeOnly(firstSeg?.departure_airport?.time),
         arrivalTime: timeOnly(lastSeg?.arrival_airport?.time),
         stops,

@@ -668,11 +668,30 @@ export default function HomeScreen() {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-                    Budget
+                    Budget (₹)
                   </label>
-                  <span className="text-base font-bold text-blue-600" id="budget-value">
-                    ₹{sp.budget.toLocaleString("en-IN")}
-                  </span>
+                  <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200/60 rounded-xl px-3 py-1.5 focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-500 transition-all">
+                    <span className="text-sm font-bold text-slate-450">₹</span>
+                    <input
+                      type="number"
+                      min="5000"
+                      max="1000000"
+                      step="1000"
+                      value={sp.budget || ""}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        update({ budget: Number.isNaN(val) ? 0 : val });
+                      }}
+                      onBlur={(e) => {
+                        let val = parseInt(e.target.value);
+                        if (Number.isNaN(val) || val < 5000) val = 5000;
+                        if (val > 1000000) val = 1000000;
+                        update({ budget: val });
+                      }}
+                      className="w-24 text-right bg-transparent text-sm font-extrabold text-blue-600 focus:outline-none font-sans [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      id="budget-value"
+                    />
+                  </div>
                 </div>
                 <div className="relative pt-2">
                   <input
@@ -680,7 +699,7 @@ export default function HomeScreen() {
                     min="5000"
                     max="300000"
                     step="5000"
-                    value={sp.budget}
+                    value={sp.budget > 300000 ? 300000 : sp.budget}
                     onChange={(e) =>
                       update({ budget: parseInt(e.target.value) || 5000 })
                     }
@@ -690,7 +709,7 @@ export default function HomeScreen() {
                   <div className="flex justify-between text-[10px] text-slate-400 mt-2 font-semibold">
                     <span>₹5,000</span>
                     <span>₹1,50,000</span>
-                    <span>₹3,00,000</span>
+                    <span>₹3,00,000{sp.budget > 300000 ? "+" : ""}</span>
                   </div>
                 </div>
               </div>

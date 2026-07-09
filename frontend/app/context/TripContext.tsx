@@ -123,6 +123,7 @@ export function TripProvider({ children }: { children: ReactNode }) {
         checkOut: sp.returnDate,
         travelers: (sp.adults || 2) + (sp.children || 0),
         budget: sp.budget,
+        tripType: sp.tripType,
         airlines: sp.airlines,
         directOnly: sp.directOnly,
         departureTime: sp.departureTime,
@@ -177,7 +178,9 @@ export function TripProvider({ children }: { children: ReactNode }) {
           ...prev,
           bundles: [],
           isLoading: false,
-          error: "No bundles found within your budget. Try adjusting your preferences.",
+          error:
+            data.meta?.message ||
+            "No bundles found. Try adjusting your preferences or budget.",
           currentView: "results",
         }));
       }
