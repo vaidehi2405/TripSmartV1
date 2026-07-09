@@ -14,7 +14,7 @@ const ratingOptions = [
   { value: 5, label: "5★ only" },
 ];
 
-const amenityCheckboxes = ["Pool", "Free Wi-Fi", "Breakfast", "AC", "Spa", "Gym"];
+const amenityCheckboxes = ["Pool", "Free Wi-Fi", "Breakfast", "AC", "Spa", "Gym", "Pet-friendly"];
 
 export default function FiltersSidebar() {
   const { filters, setFilters, resetFilters, bundles, searchParams } = useTrip();

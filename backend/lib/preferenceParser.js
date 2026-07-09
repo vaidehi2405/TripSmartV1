@@ -8,22 +8,13 @@
  */
 async function parseTripPreferences(text) {
   if (!text || typeof text !== "string" || text.trim() === "") {
-    return {
-      travellerType: null,
-      elderlyTravellers: null,
-      hotelPreferences: [],
-      flightPreferences: {}
-    };
+    return emptyPreferences();
   }
 
-  // When using mock data, skip Groq entirely
+  // When using mock data, skip Groq but still apply simple keyword extraction
+  // so the UI can explain obvious AI-field preferences in local smoke tests.
   if (process.env.USE_MOCK === "true") {
-    return {
-      travellerType: null,
-      elderlyTravellers: null,
-      hotelPreferences: [],
-      flightPreferences: {}
-    };
+    return emptyPreferences(text);
   }
 
   const { groq } = require("./groq");
@@ -80,18 +71,42 @@ Example output:
     return {
       travellerType: parsed.travellerType || null,
       elderlyTravellers: typeof parsed.elderlyTravellers === "boolean" ? parsed.elderlyTravellers : null,
-      hotelPreferences: Array.isArray(parsed.hotelPreferences) ? parsed.hotelPreferences : [],
+      hotelPreferences: [
+        ...new Set([
+          ...parseBasicHotelPreferences(text),
+          ...(Array.isArray(parsed.hotelPreferences) ? parsed.hotelPreferences : []),
+        ]),
+      ],
       flightPreferences: parsed.flightPreferences || {}
     };
   } catch (err) {
     console.error("[preferenceParser] Failed to parse preferences:", err);
-    return {
-      travellerType: null,
-      elderlyTravellers: null,
-      hotelPreferences: [],
-      flightPreferences: {}
-    };
+    return emptyPreferences(text);
   }
+}
+
+
+function parseBasicHotelPreferences(text) {
+  const normalized = String(text || "").toLowerCase();
+  const hotelPreferences = [];
+  if (/pet|pets|dog|cat|frien?d?ly|frienfly/.test(normalized) && /pet|dog|cat/.test(normalized)) {
+    hotelPreferences.push("pet-friendly hotel");
+  }
+  if (/pool/.test(normalized)) hotelPreferences.push("pool");
+  if (/spa/.test(normalized)) hotelPreferences.push("spa");
+  if (/gym|fitness/.test(normalized)) hotelPreferences.push("gym");
+  if (/breakfast/.test(normalized)) hotelPreferences.push("breakfast");
+  if (/wifi|wi-fi|internet/.test(normalized)) hotelPreferences.push("free wi-fi");
+  return hotelPreferences;
+}
+
+function emptyPreferences(text = "") {
+  return {
+    travellerType: null,
+    elderlyTravellers: null,
+    hotelPreferences: parseBasicHotelPreferences(text),
+    flightPreferences: {}
+  };
 }
 
 module.exports = { parseTripPreferences };

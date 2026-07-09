@@ -82,8 +82,7 @@ export default function ResultsScreen() {
                 <div className="card p-12 text-center">
                   <div className="text-4xl mb-3 opacity-50">🔍</div>
                   <p className="text-slate-500 text-sm">
-                    No bundles match your current filters. Try adjusting the
-                    filters.
+                    No bundles match your current filters. Clear filters or edit the search to fetch a wider set of recommendations.
                   </p>
                 </div>
               )}
@@ -99,9 +98,7 @@ export default function ResultsScreen() {
                       AI Insight
                     </p>
                     <p className="text-xs text-blue-600 mt-0.5 leading-relaxed">
-                      These bundles were selected based on your preferences and
-                      budget. <strong>Best Overall</strong> gives you the perfect
-                      balance of price, rating & convenience.
+                      These bundles are diversified across flights and hotels, then ranked by your budget, filters, and AI preferences. Use “Why this was recommended” on each card to see how your AI note was considered.
                     </p>
                   </div>
                 </div>

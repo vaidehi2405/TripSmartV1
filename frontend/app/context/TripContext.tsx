@@ -119,7 +119,6 @@ export function TripProvider({ children }: { children: ReactNode }) {
         destination: extractCityName(sp.toAirport || sp.to),
         originCode: extractCityCode(sp.fromAirport || sp.from),
         destinationCode: extractCityCode(sp.toAirport || sp.to),
-        destinationCity: extractCityName(sp.toAirport || sp.to),
         checkIn: sp.departureDate,
         checkOut: sp.returnDate,
         travelers: (sp.adults || 2) + (sp.children || 0),
