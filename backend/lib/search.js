@@ -92,55 +92,22 @@ function amenitiesParamFromPreference(amenities) {
   return ids.join(",");
 }
 
-function serpapiGetJson(params) {
-  return new Promise((resolve, reject) => {
-    let done = false;
+async function serpapiGetJson(params) {
+  const json = await getJson(params);
+  if (json && typeof json === "object" && json.error) {
+    throw new Error(String(json.error));
+  }
 
-    const finishResolve = (value) => {
-      if (done) return;
-      done = true;
-      resolve(value);
-    };
+  const status = json?.search_metadata?.status;
+  if (status && status !== "Success") {
+    const errMsg =
+      json?.search_metadata?.error ||
+      json?.search_metadata?.status_message ||
+      `SerpApi status: ${status}`;
+    throw new Error(String(errMsg));
+  }
 
-    const finishReject = (err) => {
-      if (done) return;
-      done = true;
-      reject(err);
-    };
-
-    try {
-      const p = getJson(params, (json) => {
-        try {
-          if (json && typeof json === "object" && json.error) {
-            finishReject(new Error(String(json.error)));
-            return;
-          }
-
-          const status = json?.search_metadata?.status;
-          if (status && status !== "Success") {
-            const errMsg =
-              json?.search_metadata?.error ||
-              json?.search_metadata?.status_message ||
-              `SerpApi status: ${status}`;
-            finishReject(new Error(String(errMsg)));
-            return;
-          }
-
-          finishResolve(json);
-        } catch (e) {
-          finishReject(e);
-        }
-      });
-
-      // `getJson()` is async and may reject its returned promise; handle it to avoid
-      // unhandled rejections in Node.
-      if (p && typeof p.then === "function") {
-        p.catch((e) => finishReject(e));
-      }
-    } catch (e) {
-      finishReject(e);
-    }
-  });
+  return json;
 }
 
 function normalizeAirportId(value) {
@@ -157,6 +124,10 @@ function normalizeAirportId(value) {
 }
 
 async function searchFlights(origin, destination, date, travelers, preferences) {
+  if (process.env.USE_MOCK === "true") {
+    const { getMockFlights } = require("./mockData.js");
+    return getMockFlights(origin, destination);
+  }
   const key = process.env.SERPAPI_KEY;
   // #region agent log
   debugLog("pre-fix", "H1", "lib/search.js:164", "searchFlights_entry", {
@@ -298,6 +269,10 @@ async function searchHotels(
   travelers,
   preferences
 ) {
+  if (process.env.USE_MOCK === "true") {
+    const { getMockHotels } = require("./mockData.js");
+    return getMockHotels(destination);
+  }
   const key = process.env.SERPAPI_KEY;
   // #region agent log
   debugLog("pre-fix", "H1", "lib/search.js:287", "searchHotels_entry", {

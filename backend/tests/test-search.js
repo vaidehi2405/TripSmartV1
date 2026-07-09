@@ -1,28 +1,7 @@
-const { searchFlights, searchHotels } = require("./search.js");
+const { searchFlights, searchHotels } = require("../lib/search.js");
+require("dotenv").config({ path: require("path").resolve(__dirname, "../../.env") });
 
 (async function main() {
-  // Next.js loads `.env.local` automatically, but plain `node` scripts don't.
-  // Load it here so the test can hit SerpApi when run locally.
-  if (!process.env.SERPAPI_KEY) {
-    try {
-      const fs = require("fs");
-      const path = require("path");
-      const envPath = path.join(process.cwd(), ".env.local");
-      const raw = fs.readFileSync(envPath, "utf8");
-      for (const line of raw.split(/\r?\n/)) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith("#")) continue;
-        const eq = trimmed.indexOf("=");
-        if (eq === -1) continue;
-        const k = trimmed.slice(0, eq).trim();
-        const v = trimmed.slice(eq + 1).trim();
-        process.env[k] = v;
-      }
-    } catch (_e) {
-      // If this fails, the search functions will just return [].
-    }
-  }
-
   const origin = "Nagpur";
   const destination = "Goa";
   /** October 15–17 / 2026 (month index 9 = October) */

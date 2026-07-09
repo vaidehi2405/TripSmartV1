@@ -1,0 +1,133 @@
+"use client";
+
+import { useTrip } from "../context/TripContext";
+
+const badgeConfig: Record<string, { label: string; class: string }> = {
+  best: { label: "Best Overall", class: "badge-best" },
+  cheapest: { label: "Cheapest", class: "badge-cheapest" },
+  bestHotel: { label: "Best Hotel", class: "badge-hotel" },
+};
+
+interface BundleCardProps {
+  bundle: any;
+  index: number;
+  originalIndex: number;
+}
+
+export default function BundleCard({ bundle, index, originalIndex }: BundleCardProps) {
+  const { goToBundle, searchParams } = useTrip();
+  const flight = bundle.flightDetails || {};
+  const hotel = bundle.hotelDetails || {};
+
+  // Determine badge based on position
+  const getBadge = () => {
+    if (index === 0) return badgeConfig.best;
+    if (index === 1) return badgeConfig.cheapest;
+    if (index === 2) return badgeConfig.bestHotel;
+    return null;
+  };
+
+  const badge = getBadge();
+  const stopsText =
+    flight.stops === 0
+      ? "Non-stop"
+      : flight.stops === 1
+      ? "1 stop"
+      : `${flight.stops} stops`;
+
+  const fromCode = searchParams.from.match(/\(([^)]+)\)/)?.[1] || searchParams.from;
+  const toCode = searchParams.to.match(/\(([^)]+)\)/)?.[1] || searchParams.to;
+
+  return (
+    <div
+      className={`card p-0 overflow-hidden animate-fade-in-up stagger-${
+        index + 1
+      } hover:border-blue-100`}
+      id={`bundle-card-${index}`}
+    >
+      <div className="flex flex-col md:flex-row">
+        {/* Flight + Hotel Info */}
+        <div className="flex-1 p-5">
+          {/* Badge */}
+          {badge && (
+            <span className={`badge ${badge.class} mb-3`}>{badge.label}</span>
+          )}
+
+          {/* Flight section */}
+          <div className="flex items-center gap-4 mb-4">
+            {/* Airline icon placeholder */}
+            <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
+              <span className="text-lg">✈️</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-slate-800">
+                {flight.airline || "Airline"}
+              </div>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-sm font-bold text-slate-800">
+                  {flight.departureTime || "--:--"}
+                </span>
+                <span className="text-xs text-slate-400">—</span>
+                <span className="text-sm font-bold text-slate-800">
+                  {flight.arrivalTime || "--:--"}
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-400 mt-0.5">
+                {stopsText} · {fromCode} → {toCode}
+              </div>
+            </div>
+          </div>
+
+          {/* Hotel section */}
+          <div className="flex items-start gap-4">
+            {/* Hotel image placeholder */}
+            <div className="w-20 h-14 rounded-lg bg-gradient-to-br from-blue-100 to-blue-50 flex items-center justify-center flex-shrink-0 overflow-hidden">
+              <span className="text-2xl">🏨</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                Hotel
+              </div>
+              <div className="text-sm font-semibold text-slate-800 mt-0.5 truncate">
+                {hotel.name || "Hotel"}
+              </div>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-xs text-amber-500 font-semibold">
+                  ★ {hotel.rating || "—"}
+                </span>
+                {hotel.amenities?.slice(0, 3).map((a: string, i: number) => (
+                  <span
+                    key={i}
+                    className="text-[10px] text-slate-400"
+                  >
+                    · {a}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Price + CTA */}
+        <div className="md:w-48 border-t md:border-t-0 md:border-l border-slate-100 p-5 flex flex-col items-end justify-center bg-slate-50/50">
+          <div className="text-2xl font-extrabold text-slate-800">
+            ₹{(bundle.totalCost ?? 0).toLocaleString("en-IN")}
+          </div>
+          <div className="text-[11px] text-slate-400 mt-0.5">
+            Total for {searchParams.travelers} Adult{searchParams.travelers > 1 ? "s" : ""}
+          </div>
+          <div className="text-[10px] text-slate-400">
+            Includes taxes & fees
+          </div>
+          <button
+            onClick={() => goToBundle(originalIndex)}
+            className="mt-3 btn-outline !px-5 !py-2 !text-xs !rounded-lg"
+            id={`view-details-${index}`}
+          >
+            View Details
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
