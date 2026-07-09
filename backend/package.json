@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "dev": "nodemon server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "build": "node -e \"console.log('No backend build step required')\""
   },
   "dependencies": {
     "cors": "^2.8.5",
