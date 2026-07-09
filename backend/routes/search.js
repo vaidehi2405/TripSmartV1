@@ -20,8 +20,8 @@ router.post("/", async (req, res) => {
 
     const [rawFlights, rawHotels] = await Promise.all([
       searchFlights(
-        preferences.origin,
-        preferences.destination,
+        preferences.originCode || preferences.origin,
+        preferences.destinationCode || preferences.destination,
         flightDate,
         preferences.travelers,
         preferences

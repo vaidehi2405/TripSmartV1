@@ -18,6 +18,9 @@ export default function BundleCard({ bundle, index, originalIndex }: BundleCardP
   const { goToBundle, searchParams } = useTrip();
   const flight = bundle.flightDetails || {};
   const hotel = bundle.hotelDetails || {};
+  const aiMatches = Array.isArray(bundle.aiPreferenceMatches) ? bundle.aiPreferenceMatches : [];
+  const reasons = Array.isArray(bundle.recommendationReasons) ? bundle.recommendationReasons : [];
+  const missed = Array.isArray(bundle.preferencesMissed) ? bundle.preferencesMissed : [];
 
   // Determine badge based on position
   const getBadge = () => {
@@ -91,21 +94,40 @@ export default function BundleCard({ bundle, index, originalIndex }: BundleCardP
               <div className="text-sm font-semibold text-slate-800 mt-0.5 truncate">
                 {hotel.name || "Hotel"}
               </div>
-              <div className="flex items-center gap-2 mt-0.5">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-0.5">
                 <span className="text-xs text-amber-500 font-semibold">
                   ★ {hotel.rating || "—"}
                 </span>
-                {hotel.amenities?.slice(0, 3).map((a: string, i: number) => (
-                  <span
-                    key={i}
-                    className="text-[10px] text-slate-400"
-                  >
+                {hotel.amenities?.slice(0, 4).map((a: string, i: number) => (
+                  <span key={i} className="text-[10px] text-slate-400">
                     · {a}
                   </span>
                 ))}
               </div>
             </div>
           </div>
+
+          {(aiMatches.length > 0 || reasons.length > 0 || missed.length > 0) && (
+            <div className="mt-4 rounded-lg border border-blue-50 bg-blue-50/60 p-3">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-blue-700">
+                Why this was recommended
+              </div>
+              <ul className="mt-1.5 space-y-1 text-xs text-slate-600">
+                {[...aiMatches, ...reasons].slice(0, 3).map((reason: string, i: number) => (
+                  <li key={`reason-${i}`} className="flex gap-1.5">
+                    <span className="text-blue-500">✓</span>
+                    <span>{reason}</span>
+                  </li>
+                ))}
+                {missed.slice(0, 2).map((reason: string, i: number) => (
+                  <li key={`missed-${i}`} className="flex gap-1.5 text-amber-600">
+                    <span>!</span>
+                    <span>{reason}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
 
         {/* Price + CTA */}

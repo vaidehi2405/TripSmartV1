@@ -1,10 +1,9 @@
 const express = require("express");
 const router = express.Router();
 
-const { groq } = require("../lib/groq");
-
 router.get("/", async (_req, res) => {
   try {
+    const { groq } = require("../lib/groq");
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: [{ role: "user", content: "say hello" }],
