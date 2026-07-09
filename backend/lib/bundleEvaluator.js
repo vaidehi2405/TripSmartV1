@@ -4,7 +4,7 @@
  * Takes the structured output from parseSearchResults (flights + hotels arrays)
  * and the user preferences, then asks Groq to:
  *   1. Cross-join every flight × hotel combination.
- *   2. Calculate totalCost = (flight.price × travelers × 2) + (hotel.pricePerNight × nights).
+ *   2. Calculate totalCost = (flight.price × travelers × legs) + (hotel.pricePerNight × nights).
  *   3. Filter out bundles that exceed the budget.
  *   4. Rank surviving bundles cheapest → most expensive.
  *   5. Return a raw JSON array of at most 3 bundles.
@@ -32,15 +32,20 @@ function calcNights(checkIn, checkOut) {
  * @param {object}   preferences
  * @returns {{ bundles: object[], nights: number }}
  */
+function flightLegMultiplier(preferences) {
+  return preferences?.tripType === "oneWay" ? 1 : 2;
+}
+
 function buildCandidateBundles(flights, hotels, preferences) {
   const travelers = Number(preferences.travelers) || 1;
   const budget = Number(preferences.budget) || Infinity;
   const nights = calcNights(preferences.checkIn, preferences.checkOut);
+  const flightLegs = flightLegMultiplier(preferences);
 
   const bundles = [];
 
   for (const flight of flights) {
-    const flightCost = (Number(flight.price) || 0) * travelers * 2; // round-trip
+    const flightCost = (Number(flight.price) || 0) * travelers * flightLegs;
     for (const hotel of hotels) {
       const hotelCost = (Number(hotel.pricePerNight) || 0) * nights;
       const totalCost = flightCost + hotelCost;

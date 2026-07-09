@@ -64,9 +64,32 @@ export default function FiltersSidebar() {
 
       {/* Price Range */}
       <div className="mb-6">
-        <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-          Price Range (Total)
-        </h4>
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+            Price Range (Total)
+          </h4>
+          <div className="flex items-center gap-1 bg-slate-50 border border-slate-200/60 rounded-lg px-2 py-0.5 focus-within:ring-1 focus-within:ring-blue-500/20 focus-within:border-blue-500 transition-all">
+            <span className="text-xs font-semibold text-slate-455">₹</span>
+            <input
+              type="number"
+              min={0}
+              max={searchParams.budget || 1000000}
+              step={1000}
+              value={filters.priceMax || ""}
+              onChange={(e) => {
+                const val = parseInt(e.target.value);
+                setFilters({ priceMax: Number.isNaN(val) ? 0 : val });
+              }}
+              onBlur={(e) => {
+                let val = parseInt(e.target.value);
+                if (Number.isNaN(val) || val < 0) val = 0;
+                setFilters({ priceMax: val });
+              }}
+              className="w-20 text-right bg-transparent text-xs font-bold text-slate-700 focus:outline-none font-sans [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              id="filter-price-text"
+            />
+          </div>
+        </div>
         <div className="flex items-center gap-2 mb-2">
           <span className="text-xs text-slate-500">
             ₹{filters.priceMin.toLocaleString("en-IN")}
@@ -81,7 +104,7 @@ export default function FiltersSidebar() {
           min={0}
           max={searchParams.budget || 100000}
           step={1000}
-          value={filters.priceMax}
+          value={filters.priceMax > (searchParams.budget || 100000) ? (searchParams.budget || 100000) : filters.priceMax}
           onChange={(e) => setFilters({ priceMax: parseInt(e.target.value) })}
           className="w-full"
           id="filter-price"
