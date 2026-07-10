@@ -111,6 +111,35 @@ async function serpapiGetJson(params) {
   return json;
 }
 
+function normalizeAirportId(value) {
+  const raw = String(value || "").trim();
+  const upper = raw.toUpperCase();
+  if (/^[A-Z]{3}$/.test(upper)) return upper;
+
+  // City-to-IATA fallback for cases where the frontend sends a city label
+  // instead of a formatted "City (IATA)" value.
+  const cityToIata = {
+    MUMBAI: "BOM",
+    DELHI: "DEL",
+    HYDERABAD: "HYD",
+    BENGALURU: "BLR",
+    BANGALORE: "BLR",
+    CHENNAI: "MAA",
+    KOLKATA: "CCU",
+    KOCHI: "COK",
+    COCHIN: "COK",
+    NAGPUR: "NAG",
+    GOA: "GOI",
+    DUBAI: "DXB",
+    SINGAPORE: "SIN",
+    BALI: "DPS",
+    TOKYO: "HND",
+    LONDON: "LHR",
+    "NEW YORK": "JFK",
+  };
+  return cityToIata[upper] || raw;
+}
+
 async function searchFlights(origin, destination, date, travelers, preferences) {
   if (process.env.USE_MOCK === "true") {
     const { getMockFlights } = require("./mockData.js");

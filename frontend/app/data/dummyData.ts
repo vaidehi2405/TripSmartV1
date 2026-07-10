@@ -71,10 +71,10 @@ export const defaultSearchParams = {
   // Flight preferences
   airlines: "any",
   directOnly: false,
-  departureTime: "morning",
-  // Hotel preferences
-  minRating: 4,
-  amenities: ["Pool", "Free Wi-Fi", "Breakfast"],
+  departureTime: "any",
+  // Hotel preferences default to broad matching; users can narrow them explicitly.
+  minRating: 0,
+  amenities: [] as string[],
   hotelPreferenceText: "",
 };
 
@@ -129,5 +129,14 @@ export function extractCityName(display: string): string {
 export function extractCityCode(display: string): string {
   // "Mumbai (BOM)" -> "BOM"
   const match = display.match(/\(([^)]+)\)/);
-  return match ? match[1].trim() : display.trim();
+  if (match) return match[1].trim();
+
+  const normalized = display.trim().toLowerCase();
+  const airport = airports.find(
+    (a) =>
+      a.city.toLowerCase() === normalized ||
+      a.name.toLowerCase() === normalized ||
+      a.code.toLowerCase() === normalized
+  );
+  return airport?.code || display.trim();
 }

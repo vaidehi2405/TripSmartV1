@@ -114,9 +114,9 @@ async function evaluateBundles(parsedData, preferences, parsedAiPreferences = {}
       {
         role: "system",
         content:
-          "You are a travel bundle evaluator. You receive pre-computed flight+hotel bundle candidates. " +
-          "Your ONLY job is to evaluate preference match, assign verdicts, rank the bundles, diversify choices, " +
-          "and return up to 12 as a raw JSON array of minimal index mappings. " +
+          "You are a travel bundle evaluator. You receive pre-computed flight+hotel bundle candidates " +
+          "with exact cost figures already calculated. Your ONLY job is to evaluate preference match, " +
+          "assign verdicts, rank the bundles, diversify hotel choices, and return up to 12 as a raw JSON array. " +
           "Output ONLY the raw JSON array — no markdown, no code fences, no explanations, nothing else.",
       },
       {
@@ -129,43 +129,7 @@ async function evaluateBundles(parsedData, preferences, parsedAiPreferences = {}
   });
 
   const raw = completion.choices?.[0]?.message?.content ?? "";
-  const parsed = parseGroqResponse(raw);
-
-  const budget = Number(preferences.budget) || Infinity;
-  const reconstructed = parsed.map((item) => {
-    const b = affordableBundles[item.index];
-    if (!b) return null;
-    return {
-      flightDetails: {
-        airline: b.flight.airline || null,
-        pricePerPerson: b.flight.price ?? null,
-        departureTime: b.flight.departureTime || null,
-        arrivalTime: b.flight.arrivalTime || null,
-        stops: b.flight.stops ?? null,
-        duration: b.flight.duration ?? null,
-        bookingSite: b.flight.bookingSite || null,
-        bookingUrl: b.flight.bookingUrl || null,
-      },
-      hotelDetails: {
-        name: b.hotel.name || b.hotel.hotelName || null,
-        rating: b.hotel.rating ?? null,
-        pricePerNight: b.hotel.pricePerNight ?? null,
-        amenities: Array.isArray(b.hotel.amenities) ? b.hotel.amenities : null,
-        bookingSite: b.hotel.bookingSite || null,
-        bookingUrl: b.hotel.bookingUrl || null,
-      },
-      numberOfNights: nights,
-      totalCost: b.calculatedTotalCost,
-      budgetRemaining: b.calculatedBudgetRemaining,
-      preferenceMatch: item.preferenceMatch || "full",
-      preferencesMissed: Array.isArray(item.preferencesMissed) ? item.preferencesMissed : [],
-      aiPreferenceMatches: Array.isArray(item.aiPreferenceMatches) ? item.aiPreferenceMatches : [],
-      recommendationReasons: Array.isArray(item.recommendationReasons) ? item.recommendationReasons : [],
-      verdict: item.verdict || (b.calculatedTotalCost < budget * 0.8 ? "good_deal" : "tight")
-    };
-  }).filter(Boolean);
-
-  return normalizeReturnedBundles(reconstructed, 12);
+  return normalizeReturnedBundles(parseGroqResponse(raw), 12);
 }
 
 // ---------------------------------------------------------------------------
@@ -207,7 +171,7 @@ Your task:
    - "good_deal"  if totalCost < ${Math.round(budget * 0.8)} (less than 80% of budget)
    - "tight"      if totalCost is between ${Math.round(budget * 0.8)} and ${budget} (80–100% of budget)
 4. Rank bundles primarily by preference matching (prioritizing candidates that satisfy both explicit filters and match the AI-extracted preferences), and secondarily by cost (cheapest → most expensive).
-5. Return up to 12 bundles as a raw JSON array. If there are fewer than 12, return all of them.
+5. Return up to 12 bundles as a raw JSON array so the frontend filters have enough inventory to work with. If there are fewer than 12, return all of them.
 6. Diversify the recommendations: avoid returning the same hotel repeatedly when comparable hotel alternatives are available. Prefer a mix of hotels first, then a mix of airlines/flights.
 7. If no bundles remain after evaluation, return an empty JSON array: []
 
@@ -221,7 +185,7 @@ Preference rules to check for preferenceMatch / preferencesMissed (EXPLICIT FILT
 AI-EXTRACTED TRIP PREFERENCES (Use to rank/score bundles):
 ${JSON.stringify(aiPrefs, null, 2)}
 
-Ensure you prioritize hotels and flights matching the AI-extracted preferences. For example, if the user asks for a pet-friendly hotel, prefer hotels whose amenities or descriptive data indicate pet-friendly/pets allowed; include that in aiPreferenceMatches or list it in recommendationReasons.
+Ensure you prioritize hotels and flights matching the AI-extracted preferences. For example, if the user asks for a pet-friendly hotel, prefer hotels whose amenities or descriptive data indicate pet-friendly/pets allowed; include that in aiPreferenceMatches or list it in recommendationReasons. If travellerType is family or elderlyTravellers is true, prefer hotels with child-friendly or accessible features/reviews, quiet locations, and flights with layover/time characteristics that avoid what the user dislikes.
 
 Output schema for EACH bundle object (use these EXACT field names):
 {
