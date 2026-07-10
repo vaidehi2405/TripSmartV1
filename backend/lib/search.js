@@ -382,6 +382,7 @@ async function searchHotels(
       const bookingSite =
         Array.isArray(p?.prices) && p.prices[0]?.source ? p.prices[0].source : "";
       const bookingUrl = p?.link || "";
+      const image = p?.thumbnail || p?.images?.[0] || "";
 
       return {
         hotelName,
@@ -390,6 +391,7 @@ async function searchHotels(
         amenities,
         bookingSite,
         bookingUrl,
+        image,
       };
     });
   } catch (_err) {

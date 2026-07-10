@@ -198,11 +198,19 @@ export default function BundleDetailsScreen() {
               </div>
             </div>
  
-             {/* Hotel image placeholder */}
-             <div
-               className="w-full h-36 rounded-xl bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center mb-4"
-             >
-               <span className="text-4xl">🏨</span>
+             {/* Hotel image */}
+             <div className="w-full h-48 rounded-xl bg-slate-100 overflow-hidden mb-4 border border-slate-100">
+               {hotel.image ? (
+                 <img
+                   src={hotel.image}
+                   alt={hotel.name || "Hotel"}
+                   className="w-full h-full object-cover animate-fade-in"
+                 />
+               ) : (
+                 <div className="w-full h-full bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center">
+                   <span className="text-4xl">🏨</span>
+                 </div>
+               )}
              </div>
 
             {/* Check-in/out */}
@@ -317,16 +325,7 @@ export default function BundleDetailsScreen() {
           </div>
         </div>
 
-        {/* Book Bundle CTA */}
-        <div className="text-center">
-          <button
-            onClick={goToBooking}
-            className="btn-primary px-12 py-4 text-base"
-            id="book-bundle-cta"
-          >
-            Book This Bundle →
-          </button>
-        </div>
+
       </div>
     </div>
   );

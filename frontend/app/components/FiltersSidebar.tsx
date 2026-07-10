@@ -18,6 +18,11 @@ const amenityCheckboxes = ["Pool", "Free Wi-Fi", "Breakfast", "AC", "Spa", "Gym"
 
 export default function FiltersSidebar() {
   const { filters, setFilters, resetFilters, bundles, searchParams } = useTrip();
+  
+  // Calculate dynamic maximum price based on returned bundles
+  const maxCost = bundles.length > 0
+    ? Math.max(...bundles.map((b) => b.totalCost ?? 0))
+    : (searchParams.budget || 100000);
 
   // Extract unique airlines from results
   const airlines = Array.from(
@@ -73,7 +78,7 @@ export default function FiltersSidebar() {
             <input
               type="number"
               min={0}
-              max={searchParams.budget || 1000000}
+              max={maxCost}
               step={1000}
               value={filters.priceMax || ""}
               onChange={(e) => {
@@ -102,9 +107,9 @@ export default function FiltersSidebar() {
         <input
           type="range"
           min={0}
-          max={searchParams.budget || 100000}
+          max={maxCost}
           step={1000}
-          value={filters.priceMax > (searchParams.budget || 100000) ? (searchParams.budget || 100000) : filters.priceMax}
+          value={filters.priceMax > maxCost ? maxCost : filters.priceMax}
           onChange={(e) => setFilters({ priceMax: parseInt(e.target.value) })}
           className="w-full"
           id="filter-price"

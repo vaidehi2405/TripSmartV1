@@ -151,7 +151,7 @@ async function evaluateBundles(parsedData, preferences, parsedAiPreferences = {}
         departureTime: flight.departureTime || null,
         arrivalTime: flight.arrivalTime || null,
         stops: flight.stops ?? null,
-        duration: flight.duration ?? null,
+        duration: flight.duration || null,
         bookingSite: flight.bookingSite || null,
         bookingUrl: flight.bookingUrl || null,
       },
@@ -162,6 +162,7 @@ async function evaluateBundles(parsedData, preferences, parsedAiPreferences = {}
         amenities: Array.isArray(hotel.amenities) ? hotel.amenities : null,
         bookingSite: hotel.bookingSite || null,
         bookingUrl: hotel.bookingUrl || null,
+        image: hotel.image || null,
       },
       numberOfNights: nights,
       totalCost,
@@ -174,7 +175,25 @@ async function evaluateBundles(parsedData, preferences, parsedAiPreferences = {}
     };
   }).filter(Boolean);
 
-  return normalizeReturnedBundles(reconstructed, 12);
+  // Programmatic diversity re-ranking to ensure top cards do not repeat hotels
+  const diverseReconstructed = [];
+  const seenHotels = new Set();
+
+  for (const b of reconstructed) {
+    const hotelName = String(b.hotelDetails?.name || "").toLowerCase();
+    if (hotelName && !seenHotels.has(hotelName)) {
+      diverseReconstructed.push(b);
+      seenHotels.add(hotelName);
+    }
+  }
+
+  for (const b of reconstructed) {
+    if (!diverseReconstructed.includes(b)) {
+      diverseReconstructed.push(b);
+    }
+  }
+
+  return normalizeReturnedBundles(diverseReconstructed, 12);
 }
 
 // ---------------------------------------------------------------------------
@@ -193,6 +212,7 @@ function buildPrompt(flights, hotels, nights, preferences, parsedAiPreferences) 
     airline: f.airline,
     price: f.price,
     departureTime: f.departureTime,
+    arrivalTime: f.arrivalTime,
     stops: f.stops,
     calculatedCost: f.price * travelers * flightLegs
   }));
@@ -226,6 +246,8 @@ Your task:
 6. Return up to 12 combination mappings as a raw JSON array.
 7. Diversify recommendations: avoid selecting the same hotel repeatedly when alternative hotels are available.
 8. If no combinations fit, return an empty JSON array: []
+
+In 'recommendationReasons', write at least one reason explaining why this flight and hotel combination is a great match (compatibility), e.g. "Flight lands at 11 AM, matching hotel 12 PM check-in perfectly", "A morning flight departure paired with a highly-rated central hotel lets you maximize your first day", "Evening arrival allows for a smooth transition straight to check-in and rest", or "Direct flight paired with a top-rated hotel offers maximum comfort".
 
 Preference rules to check for preferenceMatch / preferencesMissed (EXPLICIT FILTER RULES):
 - directOnly: ${prefs.directOnly === true ? `"true" — a preference IS missed if stops > 0` : `"false" — no stops requirement`}
@@ -295,19 +317,43 @@ function normalizeReturnedBundles(bundles, limit) {
     aiPreferenceMatches: Array.isArray(bundle.aiPreferenceMatches)
       ? bundle.aiPreferenceMatches
       : [],
-    recommendationReasons: Array.isArray(bundle.recommendationReasons)
+    recommendationReasons: Array.isArray(bundle.recommendationReasons) && bundle.recommendationReasons.length > 0
       ? bundle.recommendationReasons
       : defaultRecommendationReasons(bundle),
   }));
 }
 
+function getCompatibilityReason(flight, hotel) {
+  const depTime = flight.departureTime || "";
+  const arrTime = flight.arrivalTime || "";
+  const depHour = depTime ? parseInt(depTime.split(":")[0], 10) : 12;
+  const arrHour = arrTime ? parseInt(arrTime.split(":")[0], 10) : 14;
+
+  if (arrHour >= 10 && arrHour <= 14) {
+    return `Flight lands at ${arrTime}, matching standard check-in times perfectly`;
+  }
+  if (depHour >= 8 && depHour <= 11) {
+    return "Morning departure paired with a highly-rated hotel lets you maximize your first day";
+  }
+  if (arrHour >= 18 && arrHour <= 22) {
+    return "Evening flight arrival allows a smooth transition straight to check-in and rest";
+  }
+  if (flight.stops === 0 && (hotel.rating || 0) >= 4.5) {
+    return "Direct flight paired with a top-rated hotel offers maximum comfort";
+  }
+  return "Well-timed flight and highly-rated hotel coordinates smoothly";
+}
+
 function defaultRecommendationReasons(bundle) {
   const reasons = [];
+  reasons.push(getCompatibilityReason(
+    { departureTime: bundle.flightDetails?.departureTime, arrivalTime: bundle.flightDetails?.arrivalTime, stops: bundle.flightDetails?.stops },
+    { rating: bundle.hotelDetails?.rating }
+  ));
   if (bundle.preferenceMatch === "full") reasons.push("Matches your required filters");
   if (typeof bundle.budgetRemaining === "number" && bundle.budgetRemaining > 0) {
     reasons.push(`Stays ₹${Math.round(bundle.budgetRemaining).toLocaleString("en-IN")} under budget`);
   }
-  if (bundle.hotelDetails?.rating) reasons.push(`${bundle.hotelDetails.rating}★ hotel rating`);
   return reasons.slice(0, 3);
 }
 
@@ -358,6 +404,7 @@ function rankDiverseBundles(affordableBundles, nights, preferences, parsedAiPref
         amenities: hotelAmenities,
         bookingSite: b.hotel.bookingSite || null,
         bookingUrl: b.hotel.bookingUrl || null,
+        image: b.hotel.image || null,
       },
       numberOfNights: nights,
       totalCost: b.calculatedTotalCost,
@@ -366,7 +413,7 @@ function rankDiverseBundles(affordableBundles, nights, preferences, parsedAiPref
       preferencesMissed: [],
       aiPreferenceMatches: aiMatches,
       recommendationReasons: [
-        "Diversified hotel recommendation",
+        getCompatibilityReason(b.flight, b.hotel),
         b.calculatedBudgetRemaining > 0
           ? `Stays ₹${Math.round(b.calculatedBudgetRemaining).toLocaleString("en-IN")} under budget`
           : "Fits your budget",

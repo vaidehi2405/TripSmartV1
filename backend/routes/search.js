@@ -41,25 +41,39 @@ router.post("/", async (req, res) => {
       ),
     ]);
 
-    const parsedData = await parseSearchResults(rawFlights, rawHotels, preferences);
-    const parsedAiPreferences = await parseTripPreferences(preferences.hotelPreferenceText || "");
+    const [parsedData, parsedAiPreferences] = await Promise.all([
+      parseSearchResults(rawFlights, rawHotels, preferences),
+      parseTripPreferences(preferences.hotelPreferenceText || "")
+    ]);
     const bundles = await evaluateBundles(parsedData, preferences, parsedAiPreferences);
 
-    if (bundles.length > 0) {
-      return res.status(200).json({ bundles });
+    res.setHeader("Content-Type", "application/x-ndjson");
+    res.setHeader("Transfer-Encoding", "chunked");
+
+    if (bundles.length === 0) {
+      const meta = explainEmptySearch({
+        rawFlights,
+        rawHotels,
+        parsedData,
+        preferences: { ...preferences, destination: hotelDestination },
+      });
+      res.write(JSON.stringify({ type: "meta", data: meta }) + "\n");
+      res.end();
+      return;
     }
 
-    const meta = explainEmptySearch({
-      rawFlights,
-      rawHotels,
-      parsedData,
-      preferences: { ...preferences, destination: hotelDestination },
-    });
-
-    return res.status(200).json({ bundles: [], meta });
+    for (const bundle of bundles) {
+      res.write(JSON.stringify({ type: "bundle", data: bundle }) + "\n");
+      // Tiny delay to create a smooth, modern streaming look in the UI
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    }
+    res.end();
   } catch (error) {
     console.error("[api/search] Error processing search:", error);
-    return res.status(500).json({ error: "Internal server error" });
+    if (!res.headersSent) {
+      return res.status(500).json({ error: "Internal server error" });
+    }
+    res.end();
   }
 });
 

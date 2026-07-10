@@ -83,9 +83,19 @@ export default function BundleCard({ bundle, index, originalIndex }: BundleCardP
 
           {/* Hotel section */}
           <div className="flex items-start gap-4">
-            {/* Hotel image placeholder */}
-            <div className="w-20 h-14 rounded-lg bg-gradient-to-br from-blue-100 to-blue-50 flex items-center justify-center flex-shrink-0 overflow-hidden">
-              <span className="text-2xl">🏨</span>
+            {/* Hotel image */}
+            <div className="w-20 h-14 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0 overflow-hidden border border-slate-100">
+              {hotel.image ? (
+                <img
+                  src={hotel.image}
+                  alt={hotel.name || "Hotel"}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-br from-blue-100 to-blue-50 flex items-center justify-center">
+                  <span className="text-2xl">🏨</span>
+                </div>
+              )}
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">

@@ -28,7 +28,7 @@ export default function ResultsScreen() {
       <SearchSummaryBar />
 
       <div className="max-w-7xl mx-auto px-6 py-6">
-        {isLoading ? (
+        {isLoading && bundles.length === 0 ? (
           <LoadingSkeleton />
         ) : error && bundles.length === 0 ? (
           <ErrorState message={error} onRetry={goHome} />
@@ -48,10 +48,10 @@ export default function ResultsScreen() {
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-slate-400">Sort by:</span>
                   <select
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value as SortOption)}
-                    className="text-sm font-medium text-slate-700 border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
-                    id="sort-dropdown"
+                     value={sortBy}
+                     onChange={(e) => setSortBy(e.target.value as SortOption)}
+                     className="text-sm font-medium text-slate-700 border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                     id="sort-dropdown"
                   >
                     {sortOptions.map((opt) => (
                       <option key={opt.value} value={opt.value}>
@@ -63,7 +63,7 @@ export default function ResultsScreen() {
               </div>
 
               {/* Bundle cards */}
-              {filteredBundles.length > 0 ? (
+              {filteredBundles.length > 0 || isLoading ? (
                 <div className="space-y-4">
                   {filteredBundles.map((bundle, displayIndex) => {
                     // Find the original index in the bundles array
@@ -77,6 +77,37 @@ export default function ResultsScreen() {
                       />
                     );
                   })}
+                  {/* Streaming skeletons at the bottom of the cards list */}
+                  {isLoading && (
+                    <>
+                      {[1, 2].map((i) => (
+                        <div key={i} className="card p-5 border border-slate-100 bg-white flex flex-col md:flex-row animate-pulse gap-4">
+                          <div className="flex-1 space-y-4">
+                            <div className="h-4 bg-slate-100 rounded w-24" />
+                            <div className="flex items-center gap-4">
+                              <div className="w-10 h-10 rounded-lg bg-slate-100" />
+                              <div className="space-y-2 flex-1">
+                                <div className="h-4 bg-slate-200 rounded w-1/3" />
+                                <div className="h-3 bg-slate-100 rounded w-1/4" />
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-4 border-t border-slate-50 pt-3">
+                              <div className="w-20 h-14 rounded-lg bg-slate-100" />
+                              <div className="space-y-2 flex-1">
+                                <div className="h-4 bg-slate-200 rounded w-1/2" />
+                                <div className="h-3 bg-slate-100 rounded w-1/3" />
+                              </div>
+                            </div>
+                          </div>
+                          <div className="md:w-48 border-t md:border-t-0 md:border-l border-slate-100 p-5 flex flex-col items-end justify-center bg-slate-50/50 gap-2">
+                            <div className="h-6 bg-slate-200 rounded w-24" />
+                            <div className="h-3 bg-slate-100 rounded w-16" />
+                            <div className="h-8 bg-slate-100 rounded w-28 mt-2" />
+                          </div>
+                        </div>
+                      ))}
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className="card p-12 text-center">

@@ -110,10 +110,25 @@ export function TripProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const performSearch = useCallback(async () => {
-    setState((prev) => ({ ...prev, isLoading: true, error: null }));
+    const sp = state.searchParams;
+    setState((prev) => ({
+      ...prev,
+      isLoading: true,
+      error: null,
+      bundles: [],
+      currentView: "results",
+      filters: {
+        priceMin: 0,
+        priceMax: sp.budget || 100000,
+        airlines: [],
+        maxStops: sp.directOnly ? 0 : -1,
+        departureTime: sp.departureTime || "any",
+        hotelRating: sp.minRating || 0,
+        amenities: sp.amenities || [],
+      }
+    }));
 
     try {
-      const sp = state.searchParams;
       const preferences = {
         origin: extractCityName(sp.fromAirport || sp.from),
         destination: extractCityName(sp.toAirport || sp.to),
@@ -139,58 +154,83 @@ export function TripProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ preferences }),
       });
 
-      const data = await res.json();
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No reader");
 
-      if (data.bundles && data.bundles.length > 0) {
-        // Save to recent searches
-        try {
-          const recent = JSON.parse(localStorage.getItem("recentSearches") || "[]");
-          const newSearch = {
-            from: sp.fromAirport || sp.from,
-            to: sp.toAirport || sp.to,
-            fromAirport: sp.fromAirport || sp.from,
-            toAirport: sp.toAirport || sp.to,
-            departureDate: sp.departureDate,
-            returnDate: sp.returnDate,
-            travelers: (sp.adults || 2) + (sp.children || 0),
-            adults: sp.adults || 2,
-            children: sp.children || 0,
-            timestamp: Date.now(),
-          };
-          const updated = [newSearch, ...recent.filter((r: any) =>
-            (r.fromAirport || r.from) !== (sp.fromAirport || sp.from) || (r.toAirport || r.to) !== (sp.toAirport || sp.to)
-          )].slice(0, 5);
-          localStorage.setItem("recentSearches", JSON.stringify(updated));
-        } catch { }
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let hasBundles = false;
 
-        setState((prev) => ({
-          ...prev,
-          bundles: data.bundles,
-          isLoading: false,
-          currentView: "results",
-          filters: {
-            ...prev.filters,
-            priceMax: sp.budget || 100000,
-          },
-        }));
-      } else {
-        setState((prev) => ({
-          ...prev,
-          bundles: [],
-          isLoading: false,
-          error:
-            data.meta?.message ||
-            "No bundles found. Try adjusting your preferences or budget.",
-          currentView: "results",
-        }));
+      // Save to recent searches
+      try {
+        const recent = JSON.parse(localStorage.getItem("recentSearches") || "[]");
+        const newSearch = {
+          from: sp.fromAirport || sp.from,
+          to: sp.toAirport || sp.to,
+          fromAirport: sp.fromAirport || sp.from,
+          toAirport: sp.toAirport || sp.to,
+          departureDate: sp.departureDate,
+          returnDate: sp.returnDate,
+          travelers: (sp.adults || 2) + (sp.children || 0),
+          adults: sp.adults || 2,
+          children: sp.children || 0,
+          timestamp: Date.now(),
+        };
+        const updated = [newSearch, ...recent.filter((r: any) =>
+          (r.fromAirport || r.from) !== (sp.fromAirport || sp.from) || (r.toAirport || r.to) !== (sp.toAirport || sp.to)
+        )].slice(0, 5);
+        localStorage.setItem("recentSearches", JSON.stringify(updated));
+      } catch { }
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const parsed = JSON.parse(line);
+            if (parsed.type === "bundle") {
+              hasBundles = true;
+              setState((prev) => {
+                const nextBundles = [...prev.bundles, parsed.data];
+                const maxCost = Math.max(...nextBundles.map((b) => b.totalCost ?? 0));
+                return {
+                  ...prev,
+                  bundles: nextBundles,
+                  filters: {
+                    ...prev.filters,
+                    priceMax: maxCost,
+                  }
+                };
+              });
+            } else if (parsed.type === "meta") {
+              setState((prev) => ({
+                ...prev,
+                error: parsed.data?.message || "No bundles found. Try adjusting your preferences or budget.",
+              }));
+            }
+          } catch (e) {
+            console.error("Failed to parse stream line:", e);
+          }
+        }
       }
+
+      setState((prev) => ({
+        ...prev,
+        isLoading: false,
+        error: !hasBundles && !prev.error ? "No bundles found. Try adjusting your preferences or budget." : prev.error,
+      }));
     } catch (err) {
       console.error("Search failed:", err);
       setState((prev) => ({
         ...prev,
         isLoading: false,
         error: "Something went wrong. Please try again.",
-        currentView: "results",
       }));
     }
   }, [state.searchParams]);

@@ -45,6 +45,7 @@ function getMockHotels(destination) {
         amenities: ["Free Wi-Fi", "Pool", "Spa", "Gym", "Breakfast", "AC"],
         bookingSite: "Booking.com",
         bookingUrl: "https://www.booking.com/hotel/in/taj-mahal-palace.html",
+        image: "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80",
       },
       {
         hotelName: "Trident Bandra Kurla, Mumbai",
@@ -53,6 +54,7 @@ function getMockHotels(destination) {
         amenities: ["Free Wi-Fi", "Pool", "Gym", "Parking", "Restaurant", "AC"],
         bookingSite: "Goibibo",
         bookingUrl: "https://www.goibibo.com/hotels/trident-bandra-kurla-mumbai/",
+        image: "https://images.unsplash.com/photo-1582719508461-905c673771fd?auto=format&fit=crop&w=800&q=80",
       },
       {
         hotelName: "Grand Hyatt Mumbai",
@@ -61,6 +63,7 @@ function getMockHotels(destination) {
         amenities: ["Free Wi-Fi", "Pool", "Spa", "AC", "Restaurant", "Gym"],
         bookingSite: "MakeMyTrip",
         bookingUrl: "https://www.makemytrip.com/hotels/grand-hyatt-mumbai.html",
+        image: "https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?auto=format&fit=crop&w=800&q=80",
       },
       {
         hotelName: "Hotel Sahara Star, Mumbai",
@@ -69,6 +72,7 @@ function getMockHotels(destination) {
         amenities: ["Free Wi-Fi", "Pool", "AC", "Restaurant", "Room service"],
         bookingSite: "MakeMyTrip",
         bookingUrl: "https://www.makemytrip.com/hotels/sahara-star-mumbai.html",
+        image: "https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?auto=format&fit=crop&w=800&q=80",
       },
       {
         hotelName: "Ibis Mumbai Airport",
@@ -77,6 +81,7 @@ function getMockHotels(destination) {
         amenities: ["Free Wi-Fi", "AC", "Restaurant", "Room service"],
         bookingSite: "Goibibo",
         bookingUrl: "https://www.goibibo.com/hotels/ibis-mumbai-airport/",
+        image: "https://images.unsplash.com/photo-1445019980597-93fa8acb246c?auto=format&fit=crop&w=800&q=80",
       },
     ];
   } else if (destLower.includes("nagpur") || destLower.includes("nag")) {
@@ -88,6 +93,7 @@ function getMockHotels(destination) {
         amenities: ["Free Wi-Fi", "Pool", "Gym", "Breakfast", "AC"],
         bookingSite: "Booking.com",
         bookingUrl: "https://www.booking.com/",
+        image: "https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=800&q=80",
       },
       {
         hotelName: "Le Meridien Nagpur",
@@ -96,6 +102,7 @@ function getMockHotels(destination) {
         amenities: ["Free Wi-Fi", "Pool", "Spa", "Restaurant", "AC"],
         bookingSite: "MakeMyTrip",
         bookingUrl: "https://www.makemytrip.com/",
+        image: "https://images.unsplash.com/photo-1564507592333-c60657eea523?auto=format&fit=crop&w=800&q=80",
       },
       {
         hotelName: "Hotel Centre Point, Nagpur",
@@ -104,6 +111,7 @@ function getMockHotels(destination) {
         amenities: ["Free Wi-Fi", "Pool", "Parking", "Breakfast", "AC"],
         bookingSite: "Goibibo",
         bookingUrl: "https://www.goibibo.com/",
+        image: "https://images.unsplash.com/photo-1568495248636-6432b97bd949?auto=format&fit=crop&w=800&q=80",
       },
       {
         hotelName: "Hotel Tuli International, Nagpur",
@@ -112,6 +120,7 @@ function getMockHotels(destination) {
         amenities: ["Free Wi-Fi", "AC", "Restaurant", "Room service"],
         bookingSite: "MakeMyTrip",
         bookingUrl: "https://www.makemytrip.com/",
+        image: "https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?auto=format&fit=crop&w=800&q=80",
       },
       {
         hotelName: "Hotel Hardeo, Nagpur",
@@ -120,6 +129,7 @@ function getMockHotels(destination) {
         amenities: ["Free Wi-Fi", "AC", "Parking", "Restaurant"],
         bookingSite: "Goibibo",
         bookingUrl: "https://www.goibibo.com/",
+        image: "https://images.unsplash.com/photo-1596394516093-501ba68a0ba6?auto=format&fit=crop&w=800&q=80",
       },
     ];
   } else if (destLower.includes("delhi") || destLower.includes("del")) {
@@ -131,6 +141,7 @@ function getMockHotels(destination) {
         amenities: ["Free Wi-Fi", "Pool", "Spa", "Gym", "Breakfast"],
         bookingSite: "Booking.com",
         bookingUrl: "https://www.booking.com/",
+        image: "https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=800&q=80",
       },
       {
         hotelName: "Hyatt Regency Delhi",
@@ -139,6 +150,7 @@ function getMockHotels(destination) {
         amenities: ["Free Wi-Fi", "Pool", "Gym", "Parking", "Restaurant", "Pet-friendly"],
         bookingSite: "Goibibo",
         bookingUrl: "https://www.goibibo.com/",
+        image: "https://images.unsplash.com/photo-1618773928121-c32242e63f39?auto=format&fit=crop&w=800&q=80",
       },
       {
         hotelName: "Lemon Tree Premier, Delhi Airport",
@@ -147,6 +159,7 @@ function getMockHotels(destination) {
         amenities: ["Free Wi-Fi", "Pool", "Spa", "Airport shuttle", "Bar", "Pet-friendly"],
         bookingSite: "MakeMyTrip",
         bookingUrl: "https://www.makemytrip.com/",
+        image: "https://images.unsplash.com/photo-1517840901100-8179e982acb7?auto=format&fit=crop&w=800&q=80",
       },
       {
         hotelName: "Radisson Blu Plaza Delhi Airport",
@@ -155,6 +168,7 @@ function getMockHotels(destination) {
         amenities: ["Free Wi-Fi", "Pool", "AC", "Gym", "Restaurant"],
         bookingSite: "Booking.com",
         bookingUrl: "https://www.booking.com/",
+        image: "https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?auto=format&fit=crop&w=800&q=80",
       },
       {
         hotelName: "Ibis New Delhi Aerocity",
@@ -163,6 +177,7 @@ function getMockHotels(destination) {
         amenities: ["Free Wi-Fi", "AC", "Pool", "Restaurant", "Room service"],
         bookingSite: "Goibibo",
         bookingUrl: "https://www.goibibo.com/",
+        image: "https://images.unsplash.com/photo-1598928506311-c55ded91a20c?auto=format&fit=crop&w=800&q=80",
       },
     ];
   }
@@ -176,6 +191,7 @@ function getMockHotels(destination) {
       amenities: ["Free Wi-Fi", "Pool", "Beach access", "Spa", "Breakfast"],
       bookingSite: "Booking.com",
       bookingUrl: "https://www.booking.com/",
+      image: "https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=800&q=80",
     },
     {
       hotelName: `Hyatt Place ${destination}`,
@@ -184,6 +200,7 @@ function getMockHotels(destination) {
       amenities: ["Free Wi-Fi", "Pool", "Gym", "Parking", "Restaurant"],
       bookingSite: "Goibibo",
       bookingUrl: "https://www.goibibo.com/hotels/",
+      image: "https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=800&q=80",
     },
     {
       hotelName: `Lemon Tree Amarante Beach Resort, ${destination}`,
@@ -192,6 +209,7 @@ function getMockHotels(destination) {
       amenities: ["Free Wi-Fi", "Pool", "Spa", "Airport shuttle", "Bar"],
       bookingSite: "MakeMyTrip",
       bookingUrl: "https://www.makemytrip.com/hotels/",
+      image: "https://images.unsplash.com/photo-1582719508461-905c673771fd?auto=format&fit=crop&w=800&q=80",
     },
     {
       hotelName: `Hotel Mandovi, ${destination}`,
@@ -200,6 +218,7 @@ function getMockHotels(destination) {
       amenities: ["Free Wi-Fi", "AC", "TV", "Parking", "24-hour front desk"],
       bookingSite: "MakeMyTrip",
       bookingUrl: "https://www.makemytrip.com/hotels/",
+      image: "https://images.unsplash.com/photo-1445019980597-93fa8acb246c?auto=format&fit=crop&w=800&q=80",
     },
     {
       hotelName: `Alor Grande Holiday Resort, ${destination}`,
@@ -208,6 +227,7 @@ function getMockHotels(destination) {
       amenities: ["Free Wi-Fi", "AC", "Pool", "Restaurant", "Room service"],
       bookingSite: "Goibibo",
       bookingUrl: "https://www.goibibo.com/hotels/",
+      image: "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80",
     },
   ];
 }
