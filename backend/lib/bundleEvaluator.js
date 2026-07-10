@@ -109,7 +109,7 @@ async function evaluateBundles(parsedData, preferences, parsedAiPreferences = {}
   const prompt = buildPrompt(affordableBundles, nights, preferences, parsedAiPreferences);
 
   const completion = await groq.chat.completions.create({
-    model: "llama-3.3-70b-versatile",
+    model: "llama-3.1-8b-instant",
     messages: [
       {
         role: "system",
@@ -201,7 +201,6 @@ CANDIDATE BUNDLES:
 ${JSON.stringify(compactBundles, null, 2)}
 
 Remember: output ONLY the raw JSON array. No explanation. No code fences. No markdown.`;
-}
 }
 
 /**

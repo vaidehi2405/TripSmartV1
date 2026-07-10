@@ -65,7 +65,7 @@ async function parseSearchResults(flightResults, hotelResults, preferences) {
   const prompt = buildPrompt(flightResults, hotelResults, preferences);
 
   const completion = await groq.chat.completions.create({
-    model: "llama-3.3-70b-versatile",
+    model: "llama-3.1-8b-instant",
     messages: [
       {
         role: "system",

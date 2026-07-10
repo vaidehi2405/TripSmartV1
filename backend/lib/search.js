@@ -1,5 +1,4 @@
 const { getJson } = require("serpapi");
-const { normalizeAirportId } = require("./airportCodes");
 
 function debugLog(runId, hypothesisId, location, message, data) {
   // #region agent log
