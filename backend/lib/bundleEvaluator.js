@@ -4,7 +4,7 @@
  * Takes the structured output from parseSearchResults (flights + hotels arrays)
  * and the user preferences, then asks Groq to:
  *   1. Cross-join every flight × hotel combination.
- *   2. Calculate totalCost = (flight.price × travelers × 2) + (hotel.pricePerNight × nights).
+ *   2. Calculate totalCost = (flight.price × travelers × legs) + (hotel.pricePerNight × nights).
  *   3. Filter out bundles that exceed the budget.
  *   4. Rank surviving bundles cheapest → most expensive.
  *   5. Return a raw JSON array of at most 3 bundles.
@@ -32,15 +32,20 @@ function calcNights(checkIn, checkOut) {
  * @param {object}   preferences
  * @returns {{ bundles: object[], nights: number }}
  */
+function flightLegMultiplier(preferences) {
+  return preferences?.tripType === "oneWay" ? 1 : 2;
+}
+
 function buildCandidateBundles(flights, hotels, preferences) {
   const travelers = Number(preferences.travelers) || 1;
   const budget = Number(preferences.budget) || Infinity;
   const nights = calcNights(preferences.checkIn, preferences.checkOut);
+  const flightLegs = flightLegMultiplier(preferences);
 
   const bundles = [];
 
   for (const flight of flights) {
-    const flightCost = (Number(flight.price) || 0) * travelers * 2; // round-trip
+    const flightCost = (Number(flight.price) || 0) * travelers * flightLegs;
     for (const hotel of hotels) {
       const hotelCost = (Number(hotel.pricePerNight) || 0) * nights;
       const totalCost = flightCost + hotelCost;
@@ -136,9 +141,25 @@ function buildPrompt(affordableBundles, nights, preferences, parsedAiPreferences
   const budget = Number(prefs.budget) || 0;
   const aiPrefs = parsedAiPreferences || {};
 
-  return `You are given a list of pre-computed flight+hotel bundle candidates that all fit within the user's budget.
-The cost figures (calculatedFlightCost, calculatedHotelCost, calculatedTotalCost, calculatedBudgetRemaining) are ALREADY CORRECT — do NOT recalculate them.
+  const compactBundles = affordableBundles.map((b, idx) => ({
+    index: idx,
+    flight: {
+      airline: b.flight.airline,
+      price: b.flight.price,
+      departureTime: b.flight.departureTime,
+      stops: b.flight.stops
+    },
+    hotel: {
+      name: b.hotel.name || b.hotel.hotelName,
+      rating: b.hotel.rating,
+      pricePerNight: b.hotel.pricePerNight,
+      amenities: b.hotel.amenities
+    },
+    totalCost: b.calculatedTotalCost,
+    budgetRemaining: b.calculatedBudgetRemaining
+  }));
 
+  return `You are given a list of pre-computed flight+hotel bundle candidates that all fit within the user's budget.
 Your task:
 1. Evaluate each bundle against:
    - The user's explicit filter preferences (directOnly, airlines, departureTime, minRating, amenities).
@@ -147,8 +168,8 @@ Your task:
    - Explicit filters are STRICT: if an explicit filter is missed, list it in preferencesMissed and make preferenceMatch "partial". Do NOT let AI preferences overwrite or ignore explicit filters.
    - AI-extracted preferences are enhancement preferences. If an AI preference is not met, do NOT list it as a missed explicit preference but use it to lower the ranking score of the bundle.
 3. Assign a verdict:
-   - "good_deal"  if calculatedTotalCost < ${Math.round(budget * 0.8)} (less than 80% of budget)
-   - "tight"      if calculatedTotalCost is between ${Math.round(budget * 0.8)} and ${budget} (80–100% of budget)
+   - "good_deal"  if totalCost < ${Math.round(budget * 0.8)} (less than 80% of budget)
+   - "tight"      if totalCost is between ${Math.round(budget * 0.8)} and ${budget} (80–100% of budget)
 4. Rank bundles primarily by preference matching (prioritizing candidates that satisfy both explicit filters and match the AI-extracted preferences), and secondarily by cost (cheapest → most expensive).
 5. Return up to 12 bundles as a raw JSON array so the frontend filters have enough inventory to work with. If there are fewer than 12, return all of them.
 6. Diversify the recommendations: avoid returning the same hotel repeatedly when comparable hotel alternatives are available. Prefer a mix of hotels first, then a mix of airlines/flights.
@@ -168,27 +189,7 @@ Ensure you prioritize hotels and flights matching the AI-extracted preferences. 
 
 Output schema for EACH bundle object (use these EXACT field names):
 {
-  "flightDetails": {
-    "airline": string|null,
-    "pricePerPerson": number|null,
-    "departureTime": string|null,
-    "arrivalTime": string|null,
-    "stops": number|null,
-    "duration": number|null,
-    "bookingSite": string|null,
-    "bookingUrl": string|null
-  },
-  "hotelDetails": {
-    "name": string|null,
-    "rating": number|null,
-    "pricePerNight": number|null,
-    "amenities": string[]|null,
-    "bookingSite": string|null,
-    "bookingUrl": string|null
-  },
-  "numberOfNights": number,
-  "totalCost": number,
-  "budgetRemaining": number,
+  "index": number,
   "preferenceMatch": "full" | "partial",
   "preferencesMissed": string[],
   "aiPreferenceMatches": string[],
@@ -196,32 +197,11 @@ Output schema for EACH bundle object (use these EXACT field names):
   "verdict": "good_deal" | "tight"
 }
 
-Notes:
-- "pricePerPerson" in flightDetails = the flight's price field (one-way per person).
-- "totalCost" must equal calculatedTotalCost from the input.
-- "budgetRemaining" must equal calculatedBudgetRemaining from the input.
-- "numberOfNights" = ${nights}.
-- Use null for any missing field value.
-- Do NOT include the raw "flight" or "hotel" objects from the input — only use the schema above.
-
-USER PREFERENCES:
-${JSON.stringify(
-    {
-      origin: prefs.origin,
-      destination: prefs.destination,
-      checkIn: prefs.checkIn,
-      checkOut: prefs.checkOut,
-      travelers: prefs.travelers,
-      budget: prefs.budget,
-    },
-    null,
-    2
-  )}
-
-CANDIDATE BUNDLES (all fit within budget):
-${JSON.stringify(affordableBundles, null, 2)}
+CANDIDATE BUNDLES:
+${JSON.stringify(compactBundles, null, 2)}
 
 Remember: output ONLY the raw JSON array. No explanation. No code fences. No markdown.`;
+}
 }
 
 /**
@@ -242,7 +222,7 @@ function parseGroqResponse(raw) {
       console.error("[bundleEvaluator] Groq returned non-array JSON:", typeof parsed);
       return [];
     }
-    return parsed.slice(0, 3);
+    return parsed;
   } catch (err) {
     console.error("[bundleEvaluator] Failed to parse Groq response:", err.message);
     console.error("[bundleEvaluator] Raw response was:", raw);

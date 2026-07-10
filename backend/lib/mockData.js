@@ -79,6 +79,49 @@ function getMockHotels(destination) {
         bookingUrl: "https://www.goibibo.com/hotels/ibis-mumbai-airport/",
       },
     ];
+  } else if (destLower.includes("nagpur") || destLower.includes("nag")) {
+    return [
+      {
+        hotelName: "Radisson Blu Hotel Nagpur",
+        rating: 4.4,
+        pricePerNight: 6200,
+        amenities: ["Free Wi-Fi", "Pool", "Gym", "Breakfast", "AC"],
+        bookingSite: "Booking.com",
+        bookingUrl: "https://www.booking.com/",
+      },
+      {
+        hotelName: "Le Meridien Nagpur",
+        rating: 4.3,
+        pricePerNight: 5800,
+        amenities: ["Free Wi-Fi", "Pool", "Spa", "Restaurant", "AC"],
+        bookingSite: "MakeMyTrip",
+        bookingUrl: "https://www.makemytrip.com/",
+      },
+      {
+        hotelName: "Hotel Centre Point, Nagpur",
+        rating: 4.1,
+        pricePerNight: 4200,
+        amenities: ["Free Wi-Fi", "Pool", "Parking", "Breakfast", "AC"],
+        bookingSite: "Goibibo",
+        bookingUrl: "https://www.goibibo.com/",
+      },
+      {
+        hotelName: "Hotel Tuli International, Nagpur",
+        rating: 3.9,
+        pricePerNight: 3200,
+        amenities: ["Free Wi-Fi", "AC", "Restaurant", "Room service"],
+        bookingSite: "MakeMyTrip",
+        bookingUrl: "https://www.makemytrip.com/",
+      },
+      {
+        hotelName: "Hotel Hardeo, Nagpur",
+        rating: 3.7,
+        pricePerNight: 2400,
+        amenities: ["Free Wi-Fi", "AC", "Parking", "Restaurant"],
+        bookingSite: "Goibibo",
+        bookingUrl: "https://www.goibibo.com/",
+      },
+    ];
   } else if (destLower.includes("delhi") || destLower.includes("del")) {
     return [
       {
@@ -93,7 +136,7 @@ function getMockHotels(destination) {
         hotelName: "Hyatt Regency Delhi",
         rating: 4.4,
         pricePerNight: 7800,
-        amenities: ["Free Wi-Fi", "Pool", "Gym", "Parking", "Restaurant"],
+        amenities: ["Free Wi-Fi", "Pool", "Gym", "Parking", "Restaurant", "Pet-friendly"],
         bookingSite: "Goibibo",
         bookingUrl: "https://www.goibibo.com/",
       },
@@ -101,7 +144,7 @@ function getMockHotels(destination) {
         hotelName: "Lemon Tree Premier, Delhi Airport",
         rating: 4.1,
         pricePerNight: 5500,
-        amenities: ["Free Wi-Fi", "Pool", "Spa", "Airport shuttle", "Bar"],
+        amenities: ["Free Wi-Fi", "Pool", "Spa", "Airport shuttle", "Bar", "Pet-friendly"],
         bookingSite: "MakeMyTrip",
         bookingUrl: "https://www.makemytrip.com/",
       },

@@ -24,7 +24,20 @@ app.use(
     origin: (origin, callback) => {
       // Allow requests with no origin (curl, Postman, server-to-server)
       if (!origin) return callback(null, true);
-      if (ALLOWED_ORIGINS.some((o) => origin.startsWith(o))) {
+      
+      let isAllowed = ALLOWED_ORIGINS.some((o) => origin.startsWith(o));
+      if (!isAllowed) {
+        try {
+          const hostname = new URL(origin).hostname;
+          if (hostname === "vercel.app" || hostname.endsWith(".vercel.app")) {
+            isAllowed = true;
+          }
+        } catch (e) {
+          // ignore invalid origin URLs
+        }
+      }
+
+      if (isAllowed) {
         return callback(null, true);
       }
       callback(new Error("Not allowed by CORS"));
