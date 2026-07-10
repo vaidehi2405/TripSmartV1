@@ -93,20 +93,18 @@ async function evaluateBundles(parsedData, preferences, parsedAiPreferences = {}
 
   if (flights.length === 0 || hotels.length === 0) return [];
 
-  const { bundles, nights } = buildCandidateBundles(flights, hotels, preferences);
-
-  // Only keep budget-fitting candidates.
-  const affordableBundles = bundles.filter((b) => b.fitsInBudget);
-  if (affordableBundles.length === 0) return [];
+  const nights = calcNights(preferences.checkIn, preferences.checkOut);
 
   // When using mock data, skip Groq entirely — rank deterministically while
   // preserving variety so the UI has enough options for filters and comparisons.
   if (process.env.USE_MOCK === "true") {
+    const { bundles } = buildCandidateBundles(flights, hotels, preferences);
+    const affordableBundles = bundles.filter((b) => b.fitsInBudget);
     return rankDiverseBundles(affordableBundles, nights, preferences, parsedAiPreferences, 12);
   }
 
   const { groq } = require("./groq");
-  const prompt = buildPrompt(affordableBundles, nights, preferences, parsedAiPreferences);
+  const prompt = buildPrompt(flights, hotels, nights, preferences, parsedAiPreferences);
 
   const completion = await groq.chat.completions.create({
     model: "llama-3.1-8b-instant",
@@ -114,9 +112,9 @@ async function evaluateBundles(parsedData, preferences, parsedAiPreferences = {}
       {
         role: "system",
         content:
-          "You are a travel bundle evaluator. You receive pre-computed flight+hotel bundle candidates " +
-          "with exact cost figures already calculated. Your ONLY job is to evaluate preference match, " +
-          "assign verdicts, rank the bundles, diversify hotel choices, and return up to 12 as a raw JSON array. " +
+          "You are a travel bundle evaluator. You receive lists of available flights and hotels. " +
+          "Your ONLY job is to evaluate combination options, check filters, rank, and " +
+          "return up to 12 combinations as a raw JSON array of flight-hotel index mappings. " +
           "Output ONLY the raw JSON array — no markdown, no code fences, no explanations, nothing else.",
       },
       {
@@ -129,51 +127,105 @@ async function evaluateBundles(parsedData, preferences, parsedAiPreferences = {}
   });
 
   const raw = completion.choices?.[0]?.message?.content ?? "";
-  return normalizeReturnedBundles(parseGroqResponse(raw), 12);
+  const parsed = parseGroqResponse(raw);
+
+  const budget = Number(preferences.budget) || Infinity;
+  const flightLegs = flightLegMultiplier(preferences);
+  const travelers = Number(preferences.travelers) || 1;
+
+  const reconstructed = parsed.map((item) => {
+    const flight = flights[item.flightIndex];
+    const hotel = hotels[item.hotelIndex];
+    if (!flight || !hotel) return null;
+
+    const flightCost = (Number(flight.price) || 0) * travelers * flightLegs;
+    const hotelCost = (Number(hotel.pricePerNight) || 0) * nights;
+    const totalCost = flightCost + hotelCost;
+
+    if (totalCost > budget) return null;
+
+    return {
+      flightDetails: {
+        airline: flight.airline || null,
+        pricePerPerson: flight.price ?? null,
+        departureTime: flight.departureTime || null,
+        arrivalTime: flight.arrivalTime || null,
+        stops: flight.stops ?? null,
+        duration: flight.duration ?? null,
+        bookingSite: flight.bookingSite || null,
+        bookingUrl: flight.bookingUrl || null,
+      },
+      hotelDetails: {
+        name: hotel.name || hotel.hotelName || null,
+        rating: hotel.rating ?? null,
+        pricePerNight: hotel.pricePerNight ?? null,
+        amenities: Array.isArray(hotel.amenities) ? hotel.amenities : null,
+        bookingSite: hotel.bookingSite || null,
+        bookingUrl: hotel.bookingUrl || null,
+      },
+      numberOfNights: nights,
+      totalCost,
+      budgetRemaining: budget - totalCost,
+      preferenceMatch: item.preferenceMatch || "full",
+      preferencesMissed: Array.isArray(item.preferencesMissed) ? item.preferencesMissed : [],
+      aiPreferenceMatches: Array.isArray(item.aiPreferenceMatches) ? item.aiPreferenceMatches : [],
+      recommendationReasons: Array.isArray(item.recommendationReasons) ? item.recommendationReasons : [],
+      verdict: item.verdict || (totalCost < budget * 0.8 ? "good_deal" : "tight")
+    };
+  }).filter(Boolean);
+
+  return normalizeReturnedBundles(reconstructed, 12);
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function buildPrompt(affordableBundles, nights, preferences, parsedAiPreferences) {
+function buildPrompt(flights, hotels, nights, preferences, parsedAiPreferences) {
   const prefs = preferences || {};
   const budget = Number(prefs.budget) || 0;
   const aiPrefs = parsedAiPreferences || {};
+  const travelers = Number(prefs.travelers) || 1;
+  const flightLegs = flightLegMultiplier(preferences);
 
-  const compactBundles = affordableBundles.map((b, idx) => ({
-    index: idx,
-    flight: {
-      airline: b.flight.airline,
-      price: b.flight.price,
-      departureTime: b.flight.departureTime,
-      stops: b.flight.stops
-    },
-    hotel: {
-      name: b.hotel.name || b.hotel.hotelName,
-      rating: b.hotel.rating,
-      pricePerNight: b.hotel.pricePerNight,
-      amenities: b.hotel.amenities
-    },
-    totalCost: b.calculatedTotalCost,
-    budgetRemaining: b.calculatedBudgetRemaining
+  const flightList = flights.map((f, idx) => ({
+    flightIndex: idx,
+    airline: f.airline,
+    price: f.price,
+    departureTime: f.departureTime,
+    stops: f.stops,
+    calculatedCost: f.price * travelers * flightLegs
   }));
 
-  return `You are given a list of pre-computed flight+hotel bundle candidates that all fit within the user's budget.
+  const hotelList = hotels.map((h, idx) => ({
+    hotelIndex: idx,
+    name: h.name || h.hotelName,
+    rating: h.rating,
+    pricePerNight: h.pricePerNight,
+    calculatedCost: h.pricePerNight * nights,
+    amenities: h.amenities
+  }));
+
+  return `You are given a list of available flights and a list of hotels for a trip of ${nights} nights for ${travelers} travelers.
+A candidate bundle is a combination of one flight (using flightIndex) and one hotel (using hotelIndex).
+The total cost of a bundle is: flight.calculatedCost + hotel.calculatedCost.
+Your budget is ₹${budget.toLocaleString("en-IN")}. ONLY keep combinations where total cost <= budget.
+
 Your task:
-1. Evaluate each bundle against:
+1. Cross-join the flights and hotels to find combinations that fit within the budget.
+2. Evaluate each combination against:
    - The user's explicit filter preferences (directOnly, airlines, departureTime, minRating, amenities).
    - The AI-extracted trip preferences: travellerType, elderlyTravellers, hotelPreferences, flightPreferences.
-2. Determine preferenceMatch ("full" or "partial") and preferencesMissed:
+3. Determine preferenceMatch ("full" or "partial") and preferencesMissed:
    - Explicit filters are STRICT: if an explicit filter is missed, list it in preferencesMissed and make preferenceMatch "partial". Do NOT let AI preferences overwrite or ignore explicit filters.
    - AI-extracted preferences are enhancement preferences. If an AI preference is not met, do NOT list it as a missed explicit preference but use it to lower the ranking score of the bundle.
-3. Assign a verdict:
-   - "good_deal"  if totalCost < ${Math.round(budget * 0.8)} (less than 80% of budget)
-   - "tight"      if totalCost is between ${Math.round(budget * 0.8)} and ${budget} (80–100% of budget)
-4. Rank bundles primarily by preference matching (prioritizing candidates that satisfy both explicit filters and match the AI-extracted preferences), and secondarily by cost (cheapest → most expensive).
-5. Return up to 12 bundles as a raw JSON array so the frontend filters have enough inventory to work with. If there are fewer than 12, return all of them.
-6. Diversify the recommendations: avoid returning the same hotel repeatedly when comparable hotel alternatives are available. Prefer a mix of hotels first, then a mix of airlines/flights.
-7. If no bundles remain after evaluation, return an empty JSON array: []
+4. Assign a verdict:
+   - "good_deal"  if combination totalCost < ${Math.round(budget * 0.8)} (less than 80% of budget)
+   - "tight"      if combination totalCost is between ${Math.round(budget * 0.8)} and ${budget} (80–100% of budget)
+5. Rank combinations primarily by preference matching (prioritizing candidates that satisfy both explicit filters and match the AI-extracted preferences), and secondarily by cost (cheapest → most expensive).
+6. Return up to 12 combination mappings as a raw JSON array.
+7. Diversify recommendations: avoid selecting the same hotel repeatedly when alternative hotels are available.
+8. If no combinations fit, return an empty JSON array: []
 
 Preference rules to check for preferenceMatch / preferencesMissed (EXPLICIT FILTER RULES):
 - directOnly: ${prefs.directOnly === true ? `"true" — a preference IS missed if stops > 0` : `"false" — no stops requirement`}
@@ -189,7 +241,8 @@ Ensure you prioritize hotels and flights matching the AI-extracted preferences. 
 
 Output schema for EACH bundle object (use these EXACT field names):
 {
-  "index": number,
+  "flightIndex": number,
+  "hotelIndex": number,
   "preferenceMatch": "full" | "partial",
   "preferencesMissed": string[],
   "aiPreferenceMatches": string[],
@@ -197,8 +250,11 @@ Output schema for EACH bundle object (use these EXACT field names):
   "verdict": "good_deal" | "tight"
 }
 
-CANDIDATE BUNDLES:
-${JSON.stringify(compactBundles, null, 2)}
+FLIGHTS:
+${JSON.stringify(flightList, null, 2)}
+
+HOTELS:
+${JSON.stringify(hotelList, null, 2)}
 
 Remember: output ONLY the raw JSON array. No explanation. No code fences. No markdown.`;
 }
