@@ -46,12 +46,23 @@ export default function BundleDetailsScreen() {
   const displayTotal = bundle.totalCost ?? flightPrice + hotelPrice + taxesFees;
 
   // Why AI recommended
-  const reasons = [];
-  if (bundle.budgetRemaining >= 0) reasons.push("✅ Fits within your budget of ₹" + searchParams.budget.toLocaleString("en-IN"));
-  if (searchParams.departureTime !== "any") reasons.push("✅ " + searchParams.departureTime.charAt(0).toUpperCase() + searchParams.departureTime.slice(1) + " departure as preferred");
-  if (flight.stops === 0) reasons.push("✅ Direct flight for a comfortable journey");
-  if ((hotel.rating ?? 0) >= 4) reasons.push("✅ " + hotel.rating + "★ hotel with good ratings/amenities");
-  reasons.push("✅ Best value combination of price, rating & convenience");
+  const backendReasons = Array.isArray(bundle.recommendationReasons)
+    ? bundle.recommendationReasons
+    : [];
+  const aiMatches = Array.isArray(bundle.aiPreferenceMatches)
+    ? bundle.aiPreferenceMatches
+    : [];
+  const missedPreferences = Array.isArray(bundle.preferencesMissed)
+    ? bundle.preferencesMissed
+    : [];
+  const reasons = [...aiMatches, ...backendReasons];
+  if (reasons.length === 0) {
+    if (bundle.budgetRemaining >= 0) reasons.push("Fits within your budget of ₹" + searchParams.budget.toLocaleString("en-IN"));
+    if (searchParams.departureTime !== "any") reasons.push(searchParams.departureTime.charAt(0).toUpperCase() + searchParams.departureTime.slice(1) + " departure as preferred");
+    if (flight.stops === 0) reasons.push("Direct flight for a comfortable journey");
+    if ((hotel.rating ?? 0) >= 4) reasons.push(hotel.rating + "★ hotel with good ratings/amenities");
+    reasons.push("Best value combination of price, rating & convenience");
+  }
 
   return (
     <div className="animate-fade-in">
@@ -294,7 +305,12 @@ export default function BundleDetailsScreen() {
             <div className="space-y-2.5">
               {reasons.map((reason, i) => (
                 <div key={i} className="text-sm text-slate-600 leading-relaxed">
-                  {reason}
+                  ✅ {reason}
+                </div>
+              ))}
+              {missedPreferences.map((reason: string, i: number) => (
+                <div key={`missed-${i}`} className="text-sm text-amber-600 leading-relaxed">
+                  ⚠️ {reason}
                 </div>
               ))}
             </div>
