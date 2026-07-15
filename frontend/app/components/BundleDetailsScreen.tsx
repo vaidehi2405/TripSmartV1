@@ -3,8 +3,12 @@
 import { useTrip } from "../context/TripContext";
 import { formatDateLong, calcNights } from "../data/dummyData";
 
-const badgeLabels = ["Best Overall", "Cheapest", "Best Hotel"];
-const badgeClasses = ["badge-best", "badge-cheapest", "badge-hotel"];
+const badgeConfig: Record<string, { label: string; class: string }> = {
+  "Best Overall": { label: "Best Overall", class: "badge-best" },
+  Cheapest: { label: "Cheapest", class: "badge-cheapest" },
+  "Best Hotel": { label: "Best Hotel", class: "badge-hotel" },
+  "Best Flight Time": { label: "Best Flight Time", class: "badge-fastest" },
+};
 
 export default function BundleDetailsScreen() {
   const {
@@ -13,6 +17,7 @@ export default function BundleDetailsScreen() {
     goToResults,
     goToBooking,
     searchParams,
+    goHome,
   } = useTrip();
 
   if (!bundle) {
@@ -45,24 +50,11 @@ export default function BundleDetailsScreen() {
   const taxesFees = Math.round(bundle.totalCost * 0.03);
   const displayTotal = bundle.totalCost ?? flightPrice + hotelPrice + taxesFees;
 
-  // Why AI recommended
-  const backendReasons = Array.isArray(bundle.recommendationReasons)
-    ? bundle.recommendationReasons
-    : [];
-  const aiMatches = Array.isArray(bundle.aiPreferenceMatches)
-    ? bundle.aiPreferenceMatches
-    : [];
-  const missedPreferences = Array.isArray(bundle.preferencesMissed)
-    ? bundle.preferencesMissed
-    : [];
-  const reasons = [...aiMatches, ...backendReasons];
-  if (reasons.length === 0) {
-    if (bundle.budgetRemaining >= 0) reasons.push("Fits within your budget of ₹" + searchParams.budget.toLocaleString("en-IN"));
-    if (searchParams.departureTime !== "any") reasons.push(searchParams.departureTime.charAt(0).toUpperCase() + searchParams.departureTime.slice(1) + " departure as preferred");
-    if (flight.stops === 0) reasons.push("Direct flight for a comfortable journey");
-    if ((hotel.rating ?? 0) >= 4) reasons.push(hotel.rating + "★ hotel with good ratings/amenities");
-    reasons.push("Best value combination of price, rating & convenience");
-  }
+  // Structured matches (Guardrail F)
+  const reasonsList = Array.isArray(bundle.reasons) ? bundle.reasons : [];
+  const matched = reasonsList.filter((r: any) => r.match_status === "confirmed");
+  const notMatched = reasonsList.filter((r: any) => r.match_status === "mismatch");
+  const couldNotVerify = reasonsList.filter((r: any) => r.match_status === "unverified" || r.match_status === "unresolved");
 
   return (
     <div className="animate-fade-in">
@@ -85,18 +77,21 @@ export default function BundleDetailsScreen() {
       <div className="max-w-5xl mx-auto px-6 py-8">
         {/* Badge + Price header */}
         <div className="flex items-start justify-between mb-8">
-          <span
-            className={`badge ${
-              badgeClasses[selectedBundleIndex] || "badge-best"
-            }`}
-          >
-            {badgeLabels[selectedBundleIndex] || "Top Pick"}
-          </span>
+          {bundle.rankLabel ? (
+            <span className={`badge ${badgeConfig[bundle.rankLabel]?.class || "badge-best"}`}>
+              {bundle.rankLabel}
+            </span>
+          ) : (
+            <span className="badge bg-slate-100 text-slate-600">Top Pick</span>
+          )}
           <div className="text-right">
             <div className="text-3xl font-extrabold text-slate-800">
               ₹{displayTotal.toLocaleString("en-IN")}
             </div>
-            <div className="text-xs text-slate-400">Includes taxes & fees</div>
+            <div className="text-[10px] text-slate-400 mt-1 max-w-xs ml-auto">
+              {bundle.pricingNote || `Total currently available price for ${travelers} adult${travelers > 1 ? "s" : ""}. Optional add-ons may cost extra.`}
+              <div className="text-[9px] text-slate-400/80 mt-0.5">Price refreshed just now.</div>
+            </div>
           </div>
         </div>
 
@@ -160,11 +155,9 @@ export default function BundleDetailsScreen() {
               </div>
             </div>
 
-            {/* Amenities */}
-            <div className="flex items-center gap-4 text-xs text-slate-500 mb-5 border-t border-slate-50 pt-3">
-              <span className="flex items-center gap-1">🧳 7kg Cabin Baggage</span>
-              <span className="flex items-center gap-1">📦 15kg Check-in Baggage</span>
-              <span className="flex items-center gap-1">🍽 Free Meal</span>
+            {/* Amenities (Only displaying verified info) */}
+            <div className="text-xs text-slate-400 mb-5 border-t border-slate-50 pt-3">
+              Standard check-in and check-out rules apply. Checked baggage and extra flight options can be selected at booking.
             </div>
 
             {/* CTA */}
@@ -305,22 +298,89 @@ export default function BundleDetailsScreen() {
             </div>
           </div>
 
-          {/* Why AI Recommended */}
+          {/* Why TripSmart Recommended */}
           <div className="card p-6" id="ai-recommendation">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">
-              Why AI Recommended This
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">
+              Why TripSmart Recommends This
             </h3>
-            <div className="space-y-2.5">
-              {reasons.map((reason, i) => (
-                <div key={i} className="text-sm text-slate-600 leading-relaxed">
-                  ✅ {reason}
+
+            {searchParams.hotelPreferenceText && searchParams.hotelPreferenceText.trim().length > 0 && (
+              <div className="flex items-center justify-between text-xs text-blue-600 mb-4 bg-blue-50/50 p-2.5 rounded-lg border border-blue-100/50 font-medium">
+                <span className="truncate flex-1 mr-2" title={searchParams.hotelPreferenceText}>
+                  Based on your request: “{searchParams.hotelPreferenceText}”
+                </span>
+                <button
+                  onClick={() => {
+                    goHome();
+                    setTimeout(() => {
+                      const el = document.getElementById("input-ai-preferences");
+                      if (el) {
+                        el.focus();
+                        el.scrollIntoView({ behavior: "smooth", block: "center" });
+                      }
+                    }, 100);
+                  }}
+                  className="text-blue-700 hover:text-blue-900 underline font-semibold shrink-0 cursor-pointer"
+                >
+                  Edit preferences
+                </button>
+              </div>
+            )}
+
+            {bundle.rankingFactors && (
+              <p className="text-xs text-slate-500 mb-4 pb-2 border-b border-slate-100/60 leading-relaxed">
+                {bundle.rankingFactors}
+              </p>
+            )}
+
+            <div className="space-y-4">
+              {matched.length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold text-emerald-700 mb-1.5 uppercase tracking-wide">Matched</div>
+                  <div className="space-y-1.5">
+                    {matched.map((r: any, idx: number) => (
+                      <div key={idx} className="text-sm text-slate-700 flex gap-2 items-start">
+                        <span className="text-emerald-500 shrink-0">✓</span>
+                        <span>{r.explanation}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ))}
-              {missedPreferences.map((reason: string, i: number) => (
-                <div key={`missed-${i}`} className="text-sm text-amber-600 leading-relaxed">
-                  ⚠️ {reason}
+              )}
+
+              {notMatched.length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold text-amber-700 mb-1.5 uppercase tracking-wide">Not Matched</div>
+                  <div className="space-y-1.5">
+                    {notMatched.map((r: any, idx: number) => (
+                      <div key={idx} className="text-sm text-slate-600 flex gap-2 items-start">
+                        <span className="text-amber-500 shrink-0">–</span>
+                        <span>{r.explanation}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ))}
+              )}
+
+              {couldNotVerify.length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Could Not Verify</div>
+                  <div className="space-y-1.5">
+                    {couldNotVerify.map((r: any, idx: number) => (
+                      <div key={idx} className="text-sm text-slate-500 flex gap-2 items-start">
+                        <span className="text-slate-400 shrink-0">?</span>
+                        <span>{r.explanation}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {matched.length === 0 && notMatched.length === 0 && couldNotVerify.length === 0 && (
+                <div className="text-sm text-slate-500">
+                  No explicit preferences evaluated. This recommendation is based on price, hotel rating, and flight timing.
+                </div>
+              )}
             </div>
           </div>
         </div>

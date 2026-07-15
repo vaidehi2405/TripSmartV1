@@ -26,24 +26,21 @@ User input: "${text}"
 
 Extract the following preferences in JSON format. Return ONLY the raw JSON object — no markdown, no code blocks, no explanations, no extra characters.
 {
-  "travellerType": "solo" | "couple" | "family" | "friends" | "business" | null,
-  "elderlyTravellers": boolean | null,
-  "hotelPreferences": string[],
-  "flightPreferences": {
-    "avoidDeparture": "early_morning" | "late_night" | "layover" | null,
-    "timeOfDay": "morning" | "afternoon" | "evening" | null
-  }
-}
-
-Example output:
-{
-  "travellerType": "family",
-  "elderlyTravellers": true,
-  "hotelPreferences": ["quiet area", "near beach"],
-  "flightPreferences": {
-    "avoidDeparture": "early_morning",
-    "timeOfDay": "afternoon"
-  }
+  "hotel_preferences": {
+    "pet_friendly": true,
+    "breakfast_included": true,
+    "location_preference": "near beach"
+  },
+  "flight_preferences": {
+    "departure_period": "morning",
+    "maximum_stops": 0,
+    "avoid_overnight": true
+  },
+  "traveller_preferences": {
+    "travelling_with_children": true
+  },
+  "soft_preferences": [],
+  "unresolved_requests": []
 }`;
 
     const completion = await groq.chat.completions.create({
@@ -68,16 +65,14 @@ Example output:
     raw = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
 
     const parsed = JSON.parse(raw);
+    
+    // Validate and fill default empty objects/arrays to match the exact schema
     return {
-      travellerType: parsed.travellerType || null,
-      elderlyTravellers: typeof parsed.elderlyTravellers === "boolean" ? parsed.elderlyTravellers : null,
-      hotelPreferences: [
-        ...new Set([
-          ...parseBasicHotelPreferences(text),
-          ...(Array.isArray(parsed.hotelPreferences) ? parsed.hotelPreferences : []),
-        ]),
-      ],
-      flightPreferences: parsed.flightPreferences || {}
+      hotel_preferences: parsed.hotel_preferences || {},
+      flight_preferences: parsed.flight_preferences || {},
+      traveller_preferences: parsed.traveller_preferences || {},
+      soft_preferences: Array.isArray(parsed.soft_preferences) ? parsed.soft_preferences : [],
+      unresolved_requests: Array.isArray(parsed.unresolved_requests) ? parsed.unresolved_requests : []
     };
   } catch (err) {
     console.error("[preferenceParser] Failed to parse preferences:", err);
@@ -102,10 +97,11 @@ function parseBasicHotelPreferences(text) {
 
 function emptyPreferences(text = "") {
   return {
-    travellerType: null,
-    elderlyTravellers: null,
-    hotelPreferences: parseBasicHotelPreferences(text),
-    flightPreferences: {}
+    hotel_preferences: {},
+    flight_preferences: {},
+    traveller_preferences: {},
+    soft_preferences: [],
+    unresolved_requests: []
   };
 }
 

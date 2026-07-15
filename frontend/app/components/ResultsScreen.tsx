@@ -24,23 +24,26 @@ export default function ResultsScreen() {
   } = useTrip();
 
   return (
-    <div className="animate-fade-in">
-      <SearchSummaryBar />
+    <div className="animate-fade-in md:h-screen md:flex md:flex-col md:overflow-hidden">
+      <div className="shrink-0 z-20 relative">
+        <SearchSummaryBar />
+      </div>
 
-      <div className="max-w-7xl mx-auto px-6 py-6">
+      <div className="flex-1 md:overflow-hidden">
+        <div className="max-w-7xl mx-auto px-6 py-6 md:h-full">
         {isLoading && bundles.length === 0 ? (
           <LoadingSkeleton />
         ) : error && bundles.length === 0 ? (
           <ErrorState message={error} onRetry={goHome} />
         ) : (
-          <div className="flex gap-6 items-start">
+          <div className="flex flex-col md:flex-row gap-6 md:items-stretch md:h-full">
             {/* Filters */}
             <FiltersSidebar />
 
             {/* Results */}
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 md:h-full md:overflow-y-auto scrollbar-thin md:pr-4 pb-20 relative">
               {/* Results header */}
-              <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center justify-between mb-5 sticky top-0 bg-[#F8FAFC] z-10 py-4 -mt-4">
                 <h2 className="text-lg font-bold text-slate-800">
                   {filteredBundles.length} Best Bundle
                   {filteredBundles.length !== 1 ? "s" : ""} Found
@@ -61,6 +64,14 @@ export default function ResultsScreen() {
                   </select>
                 </div>
               </div>
+
+              {/* No-full-match banner (Guardrail B) */}
+              {!isLoading && filteredBundles.length > 0 && !filteredBundles.some((b) => b.preferenceMatch === "full") && (
+                <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800 flex gap-2 items-center">
+                  <span>⚠</span>
+                  <p className="font-medium">No bundle matches all your requirements. These are the closest available options.</p>
+                </div>
+              )}
 
               {/* Bundle cards */}
               {filteredBundles.length > 0 || isLoading ? (
@@ -118,7 +129,7 @@ export default function ResultsScreen() {
                 </div>
               )}
 
-              {/* AI Insight card */}
+              {/* AI Insight card (Guardrail E — calibrated language) */}
               {filteredBundles.length > 0 && (
                 <div className="mt-6 bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-start gap-3 animate-fade-in-up">
                   <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0 text-sm">
@@ -129,7 +140,7 @@ export default function ResultsScreen() {
                       AI Insight
                     </p>
                     <p className="text-xs text-blue-600 mt-0.5 leading-relaxed">
-                      These bundles are diversified across flights and hotels, then ranked by your budget, filters, and AI preferences. Use “Why this was recommended” on each card to see how your AI note was considered.
+                      Best available options based on current results. These recommendations depend on the available listing data. Use &ldquo;Why TripSmart recommends this&rdquo; on each card to see how your preferences were evaluated.
                     </p>
                   </div>
                 </div>
@@ -137,6 +148,7 @@ export default function ResultsScreen() {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

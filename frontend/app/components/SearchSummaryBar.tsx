@@ -30,6 +30,29 @@ export default function SearchSummaryBar() {
           <span className="text-slate-500">
             Budget: ₹{sp.budget.toLocaleString("en-IN")}
           </span>
+          {sp.hotelPreferenceText && (
+            <>
+              <span className="w-px h-4 bg-slate-200" />
+              <span className="text-slate-500 truncate max-w-[200px]" title={sp.hotelPreferenceText}>
+                AI: &ldquo;{sp.hotelPreferenceText}&rdquo;
+              </span>
+              <button
+                onClick={() => {
+                  goHome();
+                  setTimeout(() => {
+                    const el = document.getElementById("input-ai-preferences");
+                    if (el) {
+                      el.focus();
+                      el.scrollIntoView({ behavior: "smooth", block: "center" });
+                    }
+                  }, 100);
+                }}
+                className="text-xs text-blue-600 hover:text-blue-750 underline font-semibold shrink-0 cursor-pointer"
+              >
+                Edit
+              </button>
+            </>
+          )}
         </div>
         <button
           onClick={goHome}

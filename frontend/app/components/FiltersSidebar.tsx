@@ -53,10 +53,10 @@ export default function FiltersSidebar() {
 
   return (
     <aside
-      className="w-72 flex-shrink-0 bg-white rounded-xl border border-slate-100 p-5 h-fit sticky top-24 animate-fade-in"
+      className="w-72 flex-shrink-0 bg-white rounded-xl border border-slate-100 md:h-full md:flex md:flex-col relative animate-fade-in"
       id="filters-sidebar"
     >
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center justify-between p-5 pb-4 sticky top-0 bg-white z-10 rounded-t-xl border-b border-slate-100 shrink-0">
         <h3 className="font-bold text-slate-800">Filters</h3>
         <button
           onClick={resetFilters}
@@ -67,6 +67,7 @@ export default function FiltersSidebar() {
         </button>
       </div>
 
+      <div className="px-5 py-5 md:overflow-y-auto scrollbar-thin flex-1">
       {/* Price Range */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-3">
@@ -249,6 +250,7 @@ export default function FiltersSidebar() {
             </label>
           ))}
         </div>
+      </div>
       </div>
     </aside>
   );

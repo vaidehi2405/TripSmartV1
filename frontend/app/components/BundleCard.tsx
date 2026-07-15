@@ -3,9 +3,10 @@
 import { useTrip } from "../context/TripContext";
 
 const badgeConfig: Record<string, { label: string; class: string }> = {
-  best: { label: "Best Overall", class: "badge-best" },
-  cheapest: { label: "Cheapest", class: "badge-cheapest" },
-  bestHotel: { label: "Best Hotel", class: "badge-hotel" },
+  "Best Overall": { label: "Best Overall", class: "badge-best" },
+  Cheapest: { label: "Cheapest", class: "badge-cheapest" },
+  "Best Hotel": { label: "Best Hotel", class: "badge-hotel" },
+  "Best Flight Time": { label: "Best Flight Time", class: "badge-fastest" },
 };
 
 interface BundleCardProps {
@@ -14,23 +15,29 @@ interface BundleCardProps {
   originalIndex: number;
 }
 
-export default function BundleCard({ bundle, index, originalIndex }: BundleCardProps) {
+export default function BundleCard({
+  bundle,
+  index,
+  originalIndex,
+}: BundleCardProps) {
   const { goToBundle, searchParams } = useTrip();
   const flight = bundle.flightDetails || {};
   const hotel = bundle.hotelDetails || {};
-  const aiMatches = Array.isArray(bundle.aiPreferenceMatches) ? bundle.aiPreferenceMatches : [];
-  const reasons = Array.isArray(bundle.recommendationReasons) ? bundle.recommendationReasons : [];
-  const missed = Array.isArray(bundle.preferencesMissed) ? bundle.preferencesMissed : [];
+  const reasons = Array.isArray(bundle.reasons) ? bundle.reasons : [];
+  const confirmedReasons = reasons.filter(
+    (r: any) => r.match_status === "confirmed"
+  );
+  const missedReasons = reasons.filter(
+    (r: any) => r.match_status === "mismatch"
+  );
+  const unresolvedReasons = reasons.filter(
+    (r: any) =>
+      r.match_status === "unresolved" || r.match_status === "unverified"
+  );
 
-  // Determine badge based on position
-  const getBadge = () => {
-    if (index === 0) return badgeConfig.best;
-    if (index === 1) return badgeConfig.cheapest;
-    if (index === 2) return badgeConfig.bestHotel;
-    return null;
-  };
+  // Use deterministic label from backend (Guardrail D)
+  const badge = bundle.rankLabel ? badgeConfig[bundle.rankLabel] : null;
 
-  const badge = getBadge();
   const stopsText =
     flight.stops === 0
       ? "Non-stop"
@@ -38,8 +45,14 @@ export default function BundleCard({ bundle, index, originalIndex }: BundleCardP
       ? "1 stop"
       : `${flight.stops} stops`;
 
-  const fromCode = searchParams.from.match(/\(([^)]+)\)/)?.[1] || searchParams.from;
-  const toCode = searchParams.to.match(/\(([^)]+)\)/)?.[1] || searchParams.to;
+  const fromCode =
+    searchParams.from.match(/\(([^)]+)\)/)?.[1] || searchParams.from;
+  const toCode =
+    searchParams.to.match(/\(([^)]+)\)/)?.[1] || searchParams.to;
+
+  const hasAiRequest =
+    searchParams.hotelPreferenceText &&
+    searchParams.hotelPreferenceText.trim().length > 0;
 
   return (
     <div
@@ -56,9 +69,17 @@ export default function BundleCard({ bundle, index, originalIndex }: BundleCardP
             <span className={`badge ${badge.class} mb-3`}>{badge.label}</span>
           )}
 
+          {/* Partial match warning (Guardrail B) */}
+          {bundle.preferenceMatch === "partial" &&
+            bundle.hardViolations?.length > 0 && (
+              <div className="mb-3 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-1.5">
+                ⚠ Does not match all requirements:{" "}
+                {bundle.hardViolations.join(", ")}
+              </div>
+            )}
+
           {/* Flight section */}
           <div className="flex items-center gap-4 mb-4">
-            {/* Airline icon placeholder */}
             <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
               <span className="text-lg">✈️</span>
             </div>
@@ -83,7 +104,6 @@ export default function BundleCard({ bundle, index, originalIndex }: BundleCardP
 
           {/* Hotel section */}
           <div className="flex items-start gap-4">
-            {/* Hotel image */}
             <div className="w-20 h-14 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0 overflow-hidden border border-slate-100">
               {hotel.image ? (
                 <img
@@ -108,33 +128,66 @@ export default function BundleCard({ bundle, index, originalIndex }: BundleCardP
                 <span className="text-xs text-amber-500 font-semibold">
                   ★ {hotel.rating || "—"}
                 </span>
-                {hotel.amenities?.slice(0, 4).map((a: string, i: number) => (
-                  <span key={i} className="text-[10px] text-slate-400">
-                    · {a}
-                  </span>
-                ))}
+                {hotel.amenities
+                  ?.slice(0, 4)
+                  .map((a: string, i: number) => (
+                    <span key={i} className="text-[10px] text-slate-400">
+                      · {a}
+                    </span>
+                  ))}
               </div>
             </div>
           </div>
 
-          {(aiMatches.length > 0 || reasons.length > 0 || missed.length > 0) && (
+          {/* Why TripSmart recommends this (Guardrail I — only confirmed reasons from scoring) */}
+          {hasAiRequest && confirmedReasons.length > 0 && (
             <div className="mt-4 rounded-lg border border-blue-50 bg-blue-50/60 p-3">
               <div className="text-[11px] font-bold uppercase tracking-wide text-blue-700">
-                Why this was recommended
+                Why TripSmart recommends this
               </div>
+
+              <div
+                className="text-[10px] text-blue-600 mt-1 mb-2 font-medium truncate"
+                title={searchParams.hotelPreferenceText}
+              >
+                Based on your request: &ldquo;
+                {searchParams.hotelPreferenceText}&rdquo;
+              </div>
+
+              {/* Match summary — calibrated language (Guardrail E) */}
+              {bundle.matchSummary && (
+                <div className="text-[10px] text-slate-500 mb-1.5">
+                  {bundle.matchSummary}
+                </div>
+              )}
+
               <ul className="mt-1.5 space-y-1 text-xs text-slate-600">
-                {[...aiMatches, ...reasons].slice(0, 3).map((reason: string, i: number) => (
+                {confirmedReasons.slice(0, 3).map((reason: any, i: number) => (
                   <li key={`reason-${i}`} className="flex gap-1.5">
-                    <span className="text-blue-500">✓</span>
-                    <span>{reason}</span>
+                    <span className="text-emerald-500 shrink-0">✓</span>
+                    <span>{reason.explanation}</span>
                   </li>
                 ))}
-                {missed.slice(0, 2).map((reason: string, i: number) => (
-                  <li key={`missed-${i}`} className="flex gap-1.5 text-amber-600">
-                    <span>!</span>
-                    <span>{reason}</span>
+                {missedReasons.slice(0, 2).map((reason: any, i: number) => (
+                  <li
+                    key={`missed-${i}`}
+                    className="flex gap-1.5 text-amber-600"
+                  >
+                    <span className="shrink-0">✗</span>
+                    <span>{reason.explanation}</span>
                   </li>
                 ))}
+                {unresolvedReasons
+                  .slice(0, 2)
+                  .map((reason: any, i: number) => (
+                    <li
+                      key={`unresolved-${i}`}
+                      className="flex gap-1.5 text-slate-400"
+                    >
+                      <span className="shrink-0">?</span>
+                      <span>{reason.explanation}</span>
+                    </li>
+                  ))}
               </ul>
             </div>
           )}
@@ -145,11 +198,10 @@ export default function BundleCard({ bundle, index, originalIndex }: BundleCardP
           <div className="text-2xl font-extrabold text-slate-800">
             ₹{(bundle.totalCost ?? 0).toLocaleString("en-IN")}
           </div>
-          <div className="text-[11px] text-slate-400 mt-0.5">
-            Total for {searchParams.travelers} Adult{searchParams.travelers > 1 ? "s" : ""}
-          </div>
-          <div className="text-[10px] text-slate-400">
-            Includes taxes & fees
+          {/* Budget accuracy (Guardrail C) */}
+          <div className="text-[10px] text-slate-400 mt-0.5 text-right leading-relaxed">
+            {bundle.pricingNote ||
+              `Total for ${searchParams.travelers} adult${searchParams.travelers > 1 ? "s" : ""}. Add-ons may cost extra.`}
           </div>
           <button
             onClick={() => goToBundle(originalIndex)}

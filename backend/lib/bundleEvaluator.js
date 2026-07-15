@@ -1,21 +1,24 @@
 /**
  * lib/bundleEvaluator.js
  *
- * Takes the structured output from parseSearchResults (flights + hotels arrays)
- * and the user preferences, then asks Groq to:
- *   1. Cross-join every flight × hotel combination.
- *   2. Calculate totalCost = (flight.price × travelers × legs) + (hotel.pricePerNight × nights).
- *   3. Filter out bundles that exceed the budget.
- *   4. Rank surviving bundles cheapest → most expensive.
- *   5. Return a raw JSON array of at most 3 bundles.
+ * Evaluates and ranks flight × hotel bundles programmatically using
+ * deterministic weighted scoring and structured AI preferences.
+ *
+ * Guardrails implemented:
+ *   A – No fabricated attributes (only confirmed data drives reasons)
+ *   B – Hard vs soft constraints
+ *   C – Budget accuracy & pricing notes
+ *   D – Deterministic label assignment
+ *   E – Calibrated language (no "perfect match")
+ *   F – Structured match/mismatch/unverified states
+ *   G – Ambiguous requests surfaced as unresolved
+ *   I – Reason objects tied to scoring logic
  */
 
-/**
- * Calculate the number of nights between two YYYY-MM-DD strings.
- * @param {string} checkIn
- * @param {string} checkOut
- * @returns {number}
- */
+// ---------------------------------------------------------------------------
+// Utilities
+// ---------------------------------------------------------------------------
+
 function calcNights(checkIn, checkOut) {
   const msPerDay = 24 * 60 * 60 * 1000;
   const inMs = new Date(checkIn).getTime();
@@ -24,24 +27,31 @@ function calcNights(checkIn, checkOut) {
   return Math.round((outMs - inMs) / msPerDay);
 }
 
-/**
- * Pre-compute all flight × hotel combinations with cost figures so that
- * Groq has precise numbers to reason over (avoids hallucinated arithmetic).
- * @param {object[]} flights
- * @param {object[]} hotels
- * @param {object}   preferences
- * @returns {{ bundles: object[], nights: number }}
- */
 function flightLegMultiplier(preferences) {
   return preferences?.tripType === "oneWay" ? 1 : 2;
 }
+
+function getDepHour(departureTime) {
+  return parseInt((departureTime || "12:00").split(":")[0], 10);
+}
+
+function matchesPeriod(hour, period) {
+  const p = (period || "").toLowerCase();
+  if (p.includes("morning")) return hour >= 5 && hour < 12;
+  if (p.includes("afternoon")) return hour >= 12 && hour < 17;
+  if (p.includes("evening")) return hour >= 17 && hour < 24;
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Build candidate bundles (flight × hotel cross-join)
+// ---------------------------------------------------------------------------
 
 function buildCandidateBundles(flights, hotels, preferences) {
   const travelers = Number(preferences.travelers) || 1;
   const budget = Number(preferences.budget) || Infinity;
   const nights = calcNights(preferences.checkIn, preferences.checkOut);
   const flightLegs = flightLegMultiplier(preferences);
-
   const bundles = [];
 
   for (const flight of flights) {
@@ -49,343 +59,538 @@ function buildCandidateBundles(flights, hotels, preferences) {
     for (const hotel of hotels) {
       const hotelCost = (Number(hotel.pricePerNight) || 0) * nights;
       const totalCost = flightCost + hotelCost;
-      const budgetRemaining = budget - totalCost;
-
       bundles.push({
         flight,
         hotel,
         calculatedFlightCost: flightCost,
         calculatedHotelCost: hotelCost,
         calculatedTotalCost: totalCost,
-        calculatedBudgetRemaining: budgetRemaining,
+        calculatedBudgetRemaining: budget - totalCost,
         fitsInBudget: totalCost <= budget,
       });
     }
   }
-
   return { bundles, nights };
 }
 
-/**
- * Sends pre-computed bundle candidates to Groq and returns at most 3 ranked bundles.
- *
- * @param {object}   parsedData            Output from parseSearchResults()
- * @param {object[]} parsedData.flights
- * @param {object[]} parsedData.hotels
- * @param {object}   preferences
- * @param {string}   preferences.origin
- * @param {string}   preferences.destination
- * @param {string}   preferences.checkIn      YYYY-MM-DD
- * @param {string}   preferences.checkOut     YYYY-MM-DD
- * @param {number}   preferences.travelers
- * @param {number}   preferences.budget       Total trip budget in INR
- * @param {string}   preferences.airlines     IATA code or "any"
- * @param {boolean}  preferences.directOnly
- * @param {string}   preferences.departureTime "morning"|"afternoon"|"evening"|"any"
- * @param {number}   preferences.minRating    0-5
- * @param {string[]} preferences.amenities
- * @param {object} [parsedAiPreferences]
- * @returns {Promise<object[]>}
- */
-async function evaluateBundles(parsedData, preferences, parsedAiPreferences = {}) {
-  const flights = Array.isArray(parsedData?.flights) ? parsedData.flights : [];
-  const hotels = Array.isArray(parsedData?.hotels) ? parsedData.hotels : [];
+// ---------------------------------------------------------------------------
+// Evaluate a single candidate against hard/soft constraints + AI preferences
+// ---------------------------------------------------------------------------
 
-  if (flights.length === 0 || hotels.length === 0) return [];
+function evaluateCandidate(candidate, preferences, aiPrefs, budget) {
+  const flight = candidate.flight;
+  const hotel = candidate.hotel;
+  const hotelAmenities = Array.isArray(hotel.amenities) ? hotel.amenities : [];
+  const hotelAmenitiesLower = hotelAmenities.map((a) => a.toLowerCase());
+  const hotelAmenitiesStr = hotelAmenitiesLower.join(" ");
 
-  const nights = calcNights(preferences.checkIn, preferences.checkOut);
+  // Structured reason objects (Guardrail I)
+  const reasons = []; // { preference_id, source_field, match_status, explanation }
+  const hardViolations = [];
 
-  // When using mock data, skip Groq entirely — rank deterministically while
-  // preserving variety so the UI has enough options for filters and comparisons.
-  if (process.env.USE_MOCK === "true") {
-    const { bundles } = buildCandidateBundles(flights, hotels, preferences);
-    const affordableBundles = bundles.filter((b) => b.fitsInBudget);
-    return rankDiverseBundles(affordableBundles, nights, preferences, parsedAiPreferences, 12);
+  // --- Sub-scores (0-100 each, will be weighted later) ---
+  let priceScore = 0;
+  let aiMatchScore = 0;
+  let flightConvenienceScore = 0;
+  let hotelSuitabilityScore = 0;
+  let dataCompletenessScore = 0;
+
+  // Track active ranking factors for transparency line
+  const rankingFactors = [];
+
+  // ===== HARD CONSTRAINTS (Guardrail B) =====
+
+  // Budget is a hard constraint — bundles over budget are already filtered out
+  // by fitsInBudget, but we record it for transparency.
+
+  // Direct flights (when explicitly required)
+  if (preferences.directOnly === true) {
+    if ((flight.stops ?? 0) > 0) {
+      hardViolations.push("Direct flights only (this flight has stops)");
+      reasons.push({
+        preference_id: "flight.direct_only",
+        source_field: "flight.stops",
+        match_status: "mismatch",
+        explanation: `You required direct flights, but this flight has ${flight.stops} stop(s).`,
+      });
+    } else {
+      reasons.push({
+        preference_id: "flight.direct_only",
+        source_field: "flight.stops",
+        match_status: "confirmed",
+        explanation: "Direct (non-stop) flight as required.",
+      });
+    }
   }
 
-  const { groq } = require("./groq");
-  const prompt = buildPrompt(flights, hotels, nights, preferences, parsedAiPreferences);
+  // ===== SOFT / EXPLICIT FILTER PREFERENCES =====
 
-  const completion = await groq.chat.completions.create({
-    model: "llama-3.1-8b-instant",
-    messages: [
-      {
-        role: "system",
-        content:
-          "You are a travel bundle evaluator. You receive lists of available flights and hotels. " +
-          "Your ONLY job is to evaluate combination options, check filters, rank, and " +
-          "return up to 12 combinations as a raw JSON array of flight-hotel index mappings. " +
-          "Output ONLY the raw JSON array — no markdown, no code fences, no explanations, nothing else.",
-      },
-      {
-        role: "user",
-        content: prompt,
-      },
-    ],
-    temperature: 0,
-    max_tokens: 3000,
-  });
+  // Airline preference
+  if (preferences.airlines && preferences.airlines !== "any") {
+    if (flight.airline === preferences.airlines) {
+      reasons.push({
+        preference_id: "flight.airline",
+        source_field: "flight.airline",
+        match_status: "confirmed",
+        explanation: `${preferences.airlines} airline as preferred.`,
+      });
+    } else {
+      reasons.push({
+        preference_id: "flight.airline",
+        source_field: "flight.airline",
+        match_status: "mismatch",
+        explanation: `Preferred airline was ${preferences.airlines}, but this flight is ${flight.airline || "unknown"}.`,
+      });
+    }
+  }
 
-  const raw = completion.choices?.[0]?.message?.content ?? "";
-  const parsed = parseGroqResponse(raw);
+  // Departure time preference
+  if (preferences.departureTime && preferences.departureTime !== "any") {
+    const depHour = getDepHour(flight.departureTime);
+    if (matchesPeriod(depHour, preferences.departureTime)) {
+      flightConvenienceScore += 40;
+      rankingFactors.push(`${preferences.departureTime} departure`);
+      reasons.push({
+        preference_id: "flight.departure_time",
+        source_field: "flight.departureTime",
+        match_status: "confirmed",
+        explanation: `${preferences.departureTime.charAt(0).toUpperCase() + preferences.departureTime.slice(1)} departure — flight departs at ${flight.departureTime}.`,
+      });
+    } else {
+      reasons.push({
+        preference_id: "flight.departure_time",
+        source_field: "flight.departureTime",
+        match_status: "mismatch",
+        explanation: `Preferred ${preferences.departureTime} departure, but this flight departs at ${flight.departureTime}.`,
+      });
+    }
+  }
 
+  // Min hotel rating
+  if (typeof preferences.minRating === "number" && preferences.minRating > 0) {
+    if ((hotel.rating || 0) >= preferences.minRating) {
+      reasons.push({
+        preference_id: "hotel.min_rating",
+        source_field: "hotel.rating",
+        match_status: "confirmed",
+        explanation: `Hotel rated ${hotel.rating}★, meeting your ${preferences.minRating}★ minimum.`,
+      });
+    } else {
+      reasons.push({
+        preference_id: "hotel.min_rating",
+        source_field: "hotel.rating",
+        match_status: "mismatch",
+        explanation: `Hotel rated ${hotel.rating || "unknown"}★, below your ${preferences.minRating}★ minimum.`,
+      });
+    }
+  }
+
+  // Amenity preferences
+  if (Array.isArray(preferences.amenities) && preferences.amenities.length > 0) {
+    for (const reqAm of preferences.amenities) {
+      const found = hotelAmenitiesLower.some((a) => a.includes(reqAm.toLowerCase()));
+      reasons.push({
+        preference_id: `hotel.amenity.${reqAm.toLowerCase().replace(/\s+/g, "_")}`,
+        source_field: "hotel.amenities",
+        match_status: found ? "confirmed" : "mismatch",
+        explanation: found
+          ? `Hotel offers ${reqAm}.`
+          : `${reqAm} is not listed in this hotel's amenities.`,
+      });
+    }
+  }
+
+  // ===== AI PREFERENCES (Guardrail A — only confirmed data) =====
+
+  const hotelP = aiPrefs.hotel_preferences || {};
+  const flightP = aiPrefs.flight_preferences || {};
+  const travP = aiPrefs.traveller_preferences || {};
+
+  // Pet-friendly
+  if (hotelP.pet_friendly) {
+    const found = /pet[- ]?friendly|pets?\s*allowed/i.test(hotelAmenitiesStr);
+    if (found) {
+      aiMatchScore += 40;
+      rankingFactors.push("pet-friendly accommodation");
+      reasons.push({
+        preference_id: "hotel.pet_friendly",
+        source_field: "hotel.amenities",
+        match_status: "confirmed",
+        explanation: "You requested a pet-friendly stay, and this hotel is listed as pet-friendly.",
+      });
+    } else {
+      reasons.push({
+        preference_id: "hotel.pet_friendly",
+        source_field: "hotel.amenities",
+        match_status: "unverified",
+        explanation: "Pet-friendly status could not be verified from the available data.",
+      });
+    }
+  }
+
+  // Breakfast — distinguish free vs paid (Guardrail A)
+  if (hotelP.breakfast_included) {
+    const hasFreeBreakfast = hotelAmenitiesLower.some(
+      (a) => a.includes("free breakfast")
+    );
+    const hasPaidBreakfast = hotelAmenitiesLower.some(
+      (a) => /breakfast\s*\(\$\)/i.test(a) || (a.includes("breakfast") && !a.includes("free"))
+    );
+
+    if (hasFreeBreakfast) {
+      aiMatchScore += 40;
+      rankingFactors.push("free breakfast");
+      reasons.push({
+        preference_id: "hotel.breakfast",
+        source_field: "hotel.amenities",
+        match_status: "confirmed",
+        explanation: "You wanted breakfast included, and this hotel offers free breakfast.",
+      });
+    } else if (hasPaidBreakfast) {
+      reasons.push({
+        preference_id: "hotel.breakfast",
+        source_field: "hotel.amenities",
+        match_status: "mismatch",
+        explanation: "Breakfast is available but at an extra cost — it is not confirmed as free.",
+      });
+    } else {
+      reasons.push({
+        preference_id: "hotel.breakfast",
+        source_field: "hotel.amenities",
+        match_status: "unverified",
+        explanation: "Breakfast availability could not be verified from the available data.",
+      });
+    }
+  }
+
+  // Location preference (Guardrail A — only match if data exists)
+  if (hotelP.location_preference) {
+    const locPref = hotelP.location_preference.toLowerCase();
+    const nameMatch = hotel.name?.toLowerCase().includes(locPref);
+    // We do NOT claim a match without reliable location data
+    if (nameMatch) {
+      aiMatchScore += 20;
+      reasons.push({
+        preference_id: "hotel.location",
+        source_field: "hotel.name",
+        match_status: "confirmed",
+        explanation: `Hotel name suggests it matches your "${hotelP.location_preference}" preference.`,
+      });
+    } else {
+      reasons.push({
+        preference_id: "hotel.location",
+        source_field: "hotel.name",
+        match_status: "unverified",
+        explanation: `"${hotelP.location_preference}" could not be verified — no reliable location data available.`,
+      });
+    }
+  }
+
+  // Maximum stops (AI preference)
+  if (flightP.maximum_stops !== undefined && flightP.maximum_stops !== null) {
+    if ((flight.stops ?? 99) <= flightP.maximum_stops) {
+      aiMatchScore += 30;
+      reasons.push({
+        preference_id: "flight.max_stops",
+        source_field: "flight.stops",
+        match_status: "confirmed",
+        explanation: `You wanted at most ${flightP.maximum_stops} stop(s), and this flight has ${flight.stops ?? 0}.`,
+      });
+    } else {
+      reasons.push({
+        preference_id: "flight.max_stops",
+        source_field: "flight.stops",
+        match_status: "mismatch",
+        explanation: `You wanted at most ${flightP.maximum_stops} stop(s), but this flight has ${flight.stops}.`,
+      });
+    }
+  }
+
+  // Departure period (AI preference)
+  if (flightP.departure_period) {
+    const depHour = getDepHour(flight.departureTime);
+    const period = flightP.departure_period.toLowerCase();
+    if (matchesPeriod(depHour, period)) {
+      aiMatchScore += 30;
+      rankingFactors.push(`${period} departure`);
+      reasons.push({
+        preference_id: "flight.departure_period",
+        source_field: "flight.departureTime",
+        match_status: "confirmed",
+        explanation: `You preferred a ${period} departure, and this flight leaves at ${flight.departureTime}.`,
+      });
+    } else {
+      reasons.push({
+        preference_id: "flight.departure_period",
+        source_field: "flight.departureTime",
+        match_status: "mismatch",
+        explanation: `You preferred a ${period} departure, but this flight departs at ${flight.departureTime}.`,
+      });
+    }
+  }
+
+  // Avoid overnight (hard constraint)
+  if (flightP.avoid_overnight) {
+    const depHour = getDepHour(flight.departureTime);
+    const arrHour = getDepHour(flight.arrivalTime);
+    const isOvernight = depHour >= 22 || (depHour >= 18 && arrHour < 6);
+    if (isOvernight) {
+      hardViolations.push("Avoid overnight flights");
+      reasons.push({
+        preference_id: "flight.avoid_overnight",
+        source_field: "flight.departureTime",
+        match_status: "mismatch",
+        explanation: "You asked to avoid overnight flights, but this flight departs late evening.",
+      });
+    } else {
+      reasons.push({
+        preference_id: "flight.avoid_overnight",
+        source_field: "flight.departureTime",
+        match_status: "confirmed",
+        explanation: "Flight avoids overnight travel as requested.",
+      });
+    }
+  }
+
+  // Travelling with children
+  if (travP.travelling_with_children) {
+    const kidFriendly = /kid|child|family/i.test(hotelAmenitiesStr);
+    if (kidFriendly) {
+      aiMatchScore += 20;
+      reasons.push({
+        preference_id: "traveller.children",
+        source_field: "hotel.amenities",
+        match_status: "confirmed",
+        explanation: "Hotel is listed as kid-friendly for your family.",
+      });
+    } else {
+      reasons.push({
+        preference_id: "traveller.children",
+        source_field: "hotel.amenities",
+        match_status: "unverified",
+        explanation: "Kid-friendly status could not be verified from the available data.",
+      });
+    }
+  }
+
+  // Unresolved / ambiguous requests (Guardrail G)
+  const unresolvedRequests = aiPrefs.unresolved_requests || [];
+  for (const unresolved of unresolvedRequests) {
+    reasons.push({
+      preference_id: "unresolved",
+      source_field: null,
+      match_status: "unresolved",
+      explanation: `Could not apply: "${unresolved}" — insufficient information to evaluate.`,
+    });
+  }
+
+  // Soft preferences from parser
+  const softPreferences = aiPrefs.soft_preferences || [];
+  for (const soft of softPreferences) {
+    // Generic soft prefs — try matching against amenities
+    const softLower = String(soft).toLowerCase();
+    const found = hotelAmenitiesLower.some((a) => a.includes(softLower));
+    if (found) {
+      aiMatchScore += 10;
+      reasons.push({
+        preference_id: `soft.${softLower.replace(/\s+/g, "_")}`,
+        source_field: "hotel.amenities",
+        match_status: "confirmed",
+        explanation: `Hotel offers "${soft}" as you mentioned.`,
+      });
+    }
+  }
+
+  // ===== COMPUTE SUB-SCORES =====
+
+  // Price suitability (0-100): lower cost relative to budget = higher score
+  if (budget > 0 && budget < Infinity) {
+    const ratio = candidate.calculatedTotalCost / budget;
+    priceScore = Math.max(0, Math.min(100, (1 - ratio) * 200)); // 50% of budget = 100, at budget = 0
+    rankingFactors.push("total price");
+  }
+
+  // Flight convenience
+  flightConvenienceScore += (flight.stops === 0) ? 30 : (flight.stops === 1 ? 15 : 0);
+  if (flight.duration) {
+    flightConvenienceScore += Math.max(0, 30 - (flight.duration / 30)); // shorter = better
+  }
+
+  // Hotel suitability
+  hotelSuitabilityScore = Math.min(100, ((hotel.rating || 0) / 5) * 60);
+  hotelSuitabilityScore += Math.min(40, hotelAmenities.length * 3);
+
+  // Data completeness
+  let completenessPoints = 0;
+  if (flight.airline) completenessPoints += 15;
+  if (flight.departureTime) completenessPoints += 15;
+  if (flight.arrivalTime) completenessPoints += 10;
+  if (flight.bookingUrl) completenessPoints += 10;
+  if (hotel.name) completenessPoints += 10;
+  if (hotel.rating) completenessPoints += 10;
+  if (hotel.bookingUrl) completenessPoints += 10;
+  if (hotelAmenities.length > 0) completenessPoints += 10;
+  if (hotel.image) completenessPoints += 10;
+  dataCompletenessScore = Math.min(100, completenessPoints);
+
+  // Cap AI match score
+  aiMatchScore = Math.min(100, aiMatchScore);
+
+  // ===== WEIGHTED OVERALL SCORE =====
+  const overallScore =
+    priceScore * 0.35 +
+    aiMatchScore * 0.25 +
+    flightConvenienceScore * 0.15 +
+    hotelSuitabilityScore * 0.15 +
+    dataCompletenessScore * 0.10;
+
+  // Determine preferenceMatch
+  const hasHardViolation = hardViolations.length > 0;
+  const confirmedReasons = reasons.filter((r) => r.match_status === "confirmed");
+  const mismatchedReasons = reasons.filter((r) => r.match_status === "mismatch");
+  const totalChecked = confirmedReasons.length + mismatchedReasons.length;
+  const preferenceMatch = hasHardViolation || mismatchedReasons.length > 0 ? "partial" : "full";
+
+  // Preference count summary for calibrated language (Guardrail E)
+  const matchSummary = totalChecked > 0
+    ? `Matches ${confirmedReasons.length} of ${totalChecked} preferences`
+    : null;
+
+  // De-duplicate ranking factors
+  const uniqueFactors = [...new Set(rankingFactors)];
+
+  return {
+    overallScore,
+    preferenceMatch,
+    hardViolations,
+    reasons,
+    matchSummary,
+    rankingFactors: uniqueFactors,
+    subScores: { priceScore, aiMatchScore, flightConvenienceScore, hotelSuitabilityScore, dataCompletenessScore },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Assign deterministic labels (Guardrail D)
+// ---------------------------------------------------------------------------
+
+function assignLabels(sortedBundles) {
+  if (sortedBundles.length === 0) return;
+
+  const usedIndices = new Set();
+
+  // Best Overall — rank 1, but ONLY if it has no hard violations (Guardrail B)
+  if (sortedBundles[0].preferenceMatch === "full") {
+    sortedBundles[0].rankLabel = "Best Overall";
+    usedIndices.add(0);
+  } else {
+    // Find first bundle with full match
+    const fullMatchIdx = sortedBundles.findIndex((b) => b.preferenceMatch === "full");
+    if (fullMatchIdx >= 0) {
+      sortedBundles[fullMatchIdx].rankLabel = "Best Overall";
+      usedIndices.add(fullMatchIdx);
+    }
+    // If none has full match, no Best Overall label at all
+  }
+
+  // Cheapest — lowest totalCost among remaining
+  let cheapestIdx = -1;
+  let cheapestCost = Infinity;
+  for (let i = 0; i < sortedBundles.length; i++) {
+    if (usedIndices.has(i)) continue;
+    if (sortedBundles[i].totalCost < cheapestCost) {
+      cheapestCost = sortedBundles[i].totalCost;
+      cheapestIdx = i;
+    }
+  }
+  if (cheapestIdx >= 0) {
+    sortedBundles[cheapestIdx].rankLabel = "Cheapest";
+    usedIndices.add(cheapestIdx);
+  }
+
+  // Best Hotel — highest hotel suitability sub-score among remaining
+  let bestHotelIdx = -1;
+  let bestHotelScore = -1;
+  for (let i = 0; i < sortedBundles.length; i++) {
+    if (usedIndices.has(i)) continue;
+    const hs = sortedBundles[i].subScores?.hotelSuitabilityScore ?? 0;
+    if (hs > bestHotelScore) {
+      bestHotelScore = hs;
+      bestHotelIdx = i;
+    }
+  }
+  if (bestHotelIdx >= 0) {
+    sortedBundles[bestHotelIdx].rankLabel = "Best Hotel";
+    usedIndices.add(bestHotelIdx);
+  }
+
+  // Best Flight Time — best flight convenience score among remaining
+  let bestFlightIdx = -1;
+  let bestFlightScore = -1;
+  for (let i = 0; i < sortedBundles.length; i++) {
+    if (usedIndices.has(i)) continue;
+    const fs = sortedBundles[i].subScores?.flightConvenienceScore ?? 0;
+    if (fs > bestFlightScore) {
+      bestFlightScore = fs;
+      bestFlightIdx = i;
+    }
+  }
+  if (bestFlightIdx >= 0) {
+    sortedBundles[bestFlightIdx].rankLabel = "Best Flight Time";
+    usedIndices.add(bestFlightIdx);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Main ranking pipeline
+// ---------------------------------------------------------------------------
+
+function rankBundles(affordableBundles, nights, preferences, parsedAiPreferences, limit) {
   const budget = Number(preferences.budget) || Infinity;
-  const flightLegs = flightLegMultiplier(preferences);
   const travelers = Number(preferences.travelers) || 1;
 
-  const reconstructed = parsed.map((item) => {
-    const flight = flights[item.flightIndex];
-    const hotel = hotels[item.hotelIndex];
-    if (!flight || !hotel) return null;
-
-    const flightCost = (Number(flight.price) || 0) * travelers * flightLegs;
-    const hotelCost = (Number(hotel.pricePerNight) || 0) * nights;
-    const totalCost = flightCost + hotelCost;
-
-    if (totalCost > budget) return null;
-
-    return {
-      flightDetails: {
-        airline: flight.airline || null,
-        pricePerPerson: flight.price ?? null,
-        departureTime: flight.departureTime || null,
-        arrivalTime: flight.arrivalTime || null,
-        stops: flight.stops ?? null,
-        duration: flight.duration || null,
-        bookingSite: flight.bookingSite || null,
-        bookingUrl: flight.bookingUrl || null,
-      },
-      hotelDetails: {
-        name: hotel.name || hotel.hotelName || null,
-        rating: hotel.rating ?? null,
-        pricePerNight: hotel.pricePerNight ?? null,
-        amenities: Array.isArray(hotel.amenities) ? hotel.amenities : null,
-        bookingSite: hotel.bookingSite || null,
-        bookingUrl: hotel.bookingUrl || null,
-        image: hotel.image || null,
-      },
-      numberOfNights: nights,
-      totalCost,
-      budgetRemaining: budget - totalCost,
-      preferenceMatch: item.preferenceMatch || "full",
-      preferencesMissed: Array.isArray(item.preferencesMissed) ? item.preferencesMissed : [],
-      aiPreferenceMatches: Array.isArray(item.aiPreferenceMatches) ? item.aiPreferenceMatches : [],
-      recommendationReasons: Array.isArray(item.recommendationReasons) ? item.recommendationReasons : [],
-      verdict: item.verdict || (totalCost < budget * 0.8 ? "good_deal" : "tight")
-    };
-  }).filter(Boolean);
-
-  // Programmatic diversity re-ranking to ensure top cards do not repeat hotels
-  const diverseReconstructed = [];
-  const seenHotels = new Set();
-
-  for (const b of reconstructed) {
-    const hotelName = String(b.hotelDetails?.name || "").toLowerCase();
-    if (hotelName && !seenHotels.has(hotelName)) {
-      diverseReconstructed.push(b);
-      seenHotels.add(hotelName);
-    }
-  }
-
-  for (const b of reconstructed) {
-    if (!diverseReconstructed.includes(b)) {
-      diverseReconstructed.push(b);
-    }
-  }
-
-  return normalizeReturnedBundles(diverseReconstructed, 12);
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function buildPrompt(flights, hotels, nights, preferences, parsedAiPreferences) {
-  const prefs = preferences || {};
-  const budget = Number(prefs.budget) || 0;
-  const aiPrefs = parsedAiPreferences || {};
-  const travelers = Number(prefs.travelers) || 1;
-  const flightLegs = flightLegMultiplier(preferences);
-
-  const flightList = flights.map((f, idx) => ({
-    flightIndex: idx,
-    airline: f.airline,
-    price: f.price,
-    departureTime: f.departureTime,
-    arrivalTime: f.arrivalTime,
-    stops: f.stops,
-    calculatedCost: f.price * travelers * flightLegs
-  }));
-
-  const hotelList = hotels.map((h, idx) => ({
-    hotelIndex: idx,
-    name: h.name || h.hotelName,
-    rating: h.rating,
-    pricePerNight: h.pricePerNight,
-    calculatedCost: h.pricePerNight * nights,
-    amenities: h.amenities
-  }));
-
-  return `You are given a list of available flights and a list of hotels for a trip of ${nights} nights for ${travelers} travelers.
-A candidate bundle is a combination of one flight (using flightIndex) and one hotel (using hotelIndex).
-The total cost of a bundle is: flight.calculatedCost + hotel.calculatedCost.
-Your budget is ₹${budget.toLocaleString("en-IN")}. ONLY keep combinations where total cost <= budget.
-
-Your task:
-1. Cross-join the flights and hotels to find combinations that fit within the budget.
-2. Evaluate each combination against:
-   - The user's explicit filter preferences (directOnly, airlines, departureTime, minRating, amenities).
-   - The AI-extracted trip preferences: travellerType, elderlyTravellers, hotelPreferences, flightPreferences.
-3. Determine preferenceMatch ("full" or "partial") and preferencesMissed:
-   - Explicit filters are STRICT: if an explicit filter is missed, list it in preferencesMissed and make preferenceMatch "partial". Do NOT let AI preferences overwrite or ignore explicit filters.
-   - AI-extracted preferences are enhancement preferences. If an AI preference is not met, do NOT list it as a missed explicit preference but use it to lower the ranking score of the bundle.
-4. Assign a verdict:
-   - "good_deal"  if combination totalCost < ${Math.round(budget * 0.8)} (less than 80% of budget)
-   - "tight"      if combination totalCost is between ${Math.round(budget * 0.8)} and ${budget} (80–100% of budget)
-5. Rank combinations primarily by preference matching (prioritizing candidates that satisfy both explicit filters and match the AI-extracted preferences), and secondarily by cost (cheapest → most expensive).
-6. Return up to 12 combination mappings as a raw JSON array.
-7. Diversify recommendations: avoid selecting the same hotel repeatedly when alternative hotels are available.
-8. If no combinations fit, return an empty JSON array: []
-
-In 'recommendationReasons', write at least one reason explaining why this flight and hotel combination is a great match (compatibility), e.g. "Flight lands at 11 AM, matching hotel 12 PM check-in perfectly", "A morning flight departure paired with a highly-rated central hotel lets you maximize your first day", "Evening arrival allows for a smooth transition straight to check-in and rest", or "Direct flight paired with a top-rated hotel offers maximum comfort".
-
-Preference rules to check for preferenceMatch / preferencesMissed (EXPLICIT FILTER RULES):
-- directOnly: ${prefs.directOnly === true ? `"true" — a preference IS missed if stops > 0` : `"false" — no stops requirement`}
-- airlines: ${prefs.airlines && prefs.airlines !== "any" ? `"${prefs.airlines}" — a preference IS missed if flight airline does not match` : `"any" — no airline preference to miss`}
-- departureTime: ${prefs.departureTime && prefs.departureTime !== "any" ? `"${prefs.departureTime}" — morning=05:00-11:59, afternoon=12:00-16:59, evening=17:00-23:59; a preference IS missed if departureTime does not fall in the requested window` : `"any" — no departure time preference to miss`}
-- minRating: ${typeof prefs.minRating === "number" ? `${prefs.minRating} — a preference IS missed if hotel rating < ${prefs.minRating}` : `no minimum rating`}
-- amenities: ${Array.isArray(prefs.amenities) && prefs.amenities.length > 0 ? `[${prefs.amenities.map((a) => `"${a}"`).join(", ")}] — a preference IS missed for each amenity NOT present in the hotel's amenities list` : `[] — no amenity preferences to miss`}
-
-AI-EXTRACTED TRIP PREFERENCES (Use to rank/score bundles):
-${JSON.stringify(aiPrefs, null, 2)}
-
-Ensure you prioritize hotels and flights matching the AI-extracted preferences. For example, if the user asks for a pet-friendly hotel, prefer hotels whose amenities or descriptive data indicate pet-friendly/pets allowed; include that in aiPreferenceMatches or list it in recommendationReasons. If travellerType is family or elderlyTravellers is true, prefer hotels with child-friendly or accessible features/reviews, quiet locations, and flights with layover/time characteristics that avoid what the user dislikes.
-
-Output schema for EACH bundle object (use these EXACT field names):
-{
-  "flightIndex": number,
-  "hotelIndex": number,
-  "preferenceMatch": "full" | "partial",
-  "preferencesMissed": string[],
-  "aiPreferenceMatches": string[],
-  "recommendationReasons": string[],
-  "verdict": "good_deal" | "tight"
-}
-
-FLIGHTS:
-${JSON.stringify(flightList, null, 2)}
-
-HOTELS:
-${JSON.stringify(hotelList, null, 2)}
-
-Remember: output ONLY the raw JSON array. No explanation. No code fences. No markdown.`;
-}
-
-/**
- * Strips accidental markdown fences and parses the JSON array.
- * Falls back to [] rather than throwing.
- * @param {string} raw
- * @returns {object[]}
- */
-function parseGroqResponse(raw) {
-  if (!raw || typeof raw !== "string") return [];
-
-  let cleaned = raw.trim();
-  cleaned = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-
-  try {
-    const parsed = JSON.parse(cleaned);
-    if (!Array.isArray(parsed)) {
-      console.error("[bundleEvaluator] Groq returned non-array JSON:", typeof parsed);
-      return [];
-    }
-    return parsed;
-  } catch (err) {
-    console.error("[bundleEvaluator] Failed to parse Groq response:", err.message);
-    console.error("[bundleEvaluator] Raw response was:", raw);
-    return [];
-  }
-}
-
-module.exports = { evaluateBundles };
-
-
-function normalizeReturnedBundles(bundles, limit) {
-  if (!Array.isArray(bundles)) return [];
-  return bundles.slice(0, limit).map((bundle) => ({
-    ...bundle,
-    aiPreferenceMatches: Array.isArray(bundle.aiPreferenceMatches)
-      ? bundle.aiPreferenceMatches
-      : [],
-    recommendationReasons: Array.isArray(bundle.recommendationReasons) && bundle.recommendationReasons.length > 0
-      ? bundle.recommendationReasons
-      : defaultRecommendationReasons(bundle),
-  }));
-}
-
-function getCompatibilityReason(flight, hotel) {
-  const depTime = flight.departureTime || "";
-  const arrTime = flight.arrivalTime || "";
-  const depHour = depTime ? parseInt(depTime.split(":")[0], 10) : 12;
-  const arrHour = arrTime ? parseInt(arrTime.split(":")[0], 10) : 14;
-
-  if (arrHour >= 10 && arrHour <= 14) {
-    return `Flight lands at ${arrTime}, matching standard check-in times perfectly`;
-  }
-  if (depHour >= 8 && depHour <= 11) {
-    return "Morning departure paired with a highly-rated hotel lets you maximize your first day";
-  }
-  if (arrHour >= 18 && arrHour <= 22) {
-    return "Evening flight arrival allows a smooth transition straight to check-in and rest";
-  }
-  if (flight.stops === 0 && (hotel.rating || 0) >= 4.5) {
-    return "Direct flight paired with a top-rated hotel offers maximum comfort";
-  }
-  return "Well-timed flight and highly-rated hotel coordinates smoothly";
-}
-
-function defaultRecommendationReasons(bundle) {
-  const reasons = [];
-  reasons.push(getCompatibilityReason(
-    { departureTime: bundle.flightDetails?.departureTime, arrivalTime: bundle.flightDetails?.arrivalTime, stops: bundle.flightDetails?.stops },
-    { rating: bundle.hotelDetails?.rating }
-  ));
-  if (bundle.preferenceMatch === "full") reasons.push("Matches your required filters");
-  if (typeof bundle.budgetRemaining === "number" && bundle.budgetRemaining > 0) {
-    reasons.push(`Stays ₹${Math.round(bundle.budgetRemaining).toLocaleString("en-IN")} under budget`);
-  }
-  return reasons.slice(0, 3);
-}
-
-function rankDiverseBundles(affordableBundles, nights, preferences, parsedAiPreferences, limit) {
-  const budget = Number(preferences.budget) || Infinity;
-  const sorted = [...affordableBundles].sort((a, b) => {
-    const ratingDiff = (Number(b.hotel.rating) || 0) - (Number(a.hotel.rating) || 0);
-    if (Math.abs(ratingDiff) >= 0.3) return ratingDiff;
-    return a.calculatedTotalCost - b.calculatedTotalCost;
+  const evaluated = affordableBundles.map((bundle) => {
+    const evalResult = evaluateCandidate(bundle, preferences, parsedAiPreferences, budget);
+    return { bundle, ...evalResult };
   });
 
+  // Sort by overall score descending, then cost ascending
+  evaluated.sort((a, b) => {
+    if (Math.abs(b.overallScore - a.overallScore) > 0.5) return b.overallScore - a.overallScore;
+    return a.bundle.calculatedTotalCost - b.bundle.calculatedTotalCost;
+  });
+
+  // Diversity pass — prefer unique hotels in the top slots
   const selected = [];
   const seenHotels = new Set();
 
-  for (const candidate of sorted) {
-    const hotelName = String(candidate.hotel.name || candidate.hotel.hotelName || "").toLowerCase();
+  for (const candidate of evaluated) {
+    const hotelName = String(candidate.bundle.hotel.name || candidate.bundle.hotel.hotelName || "").toLowerCase();
     if (!seenHotels.has(hotelName)) {
       selected.push(candidate);
       seenHotels.add(hotelName);
     }
     if (selected.length >= limit) break;
   }
-
-  for (const candidate of sorted) {
+  for (const candidate of evaluated) {
     if (selected.includes(candidate)) continue;
     selected.push(candidate);
     if (selected.length >= limit) break;
   }
 
-  return selected.map((b) => {
-    const hotelAmenities = Array.isArray(b.hotel.amenities) ? b.hotel.amenities : [];
-    const aiMatches = buildAiPreferenceMatches(hotelAmenities, parsedAiPreferences);
+  // Build output bundles
+  const output = selected.map((item) => {
+    const b = item.bundle;
+    const confirmedReasons = item.reasons.filter((r) => r.match_status === "confirmed");
+
+    // Pricing note (Guardrail C)
+    const pricingNote = `Total currently available price for ${travelers} adult${travelers > 1 ? "s" : ""}. Optional add-ons (baggage, seat selection, meals, transfers, insurance) may cost extra.`;
+
+    // Ranking factors transparency line (Guardrail D)
+    const rankingFactorsLine = item.rankingFactors.length > 0
+      ? `Ranked primarily by: ${item.rankingFactors.join(", ")}.`
+      : "Ranked by overall score across price, hotel quality, and flight convenience.";
+
     return {
       flightDetails: {
         airline: b.flight.airline || null,
@@ -401,7 +606,7 @@ function rankDiverseBundles(affordableBundles, nights, preferences, parsedAiPref
         name: b.hotel.name || b.hotel.hotelName || null,
         rating: b.hotel.rating ?? null,
         pricePerNight: b.hotel.pricePerNight ?? null,
-        amenities: hotelAmenities,
+        amenities: Array.isArray(b.hotel.amenities) ? b.hotel.amenities : [],
         bookingSite: b.hotel.bookingSite || null,
         bookingUrl: b.hotel.bookingUrl || null,
         image: b.hotel.image || null,
@@ -409,32 +614,45 @@ function rankDiverseBundles(affordableBundles, nights, preferences, parsedAiPref
       numberOfNights: nights,
       totalCost: b.calculatedTotalCost,
       budgetRemaining: b.calculatedBudgetRemaining,
-      preferenceMatch: "full",
-      preferencesMissed: [],
-      aiPreferenceMatches: aiMatches,
-      recommendationReasons: [
-        getCompatibilityReason(b.flight, b.hotel),
-        b.calculatedBudgetRemaining > 0
-          ? `Stays ₹${Math.round(b.calculatedBudgetRemaining).toLocaleString("en-IN")} under budget`
-          : "Fits your budget",
-        ...(aiMatches.length > 0 ? aiMatches.slice(0, 1) : []),
-      ].slice(0, 3),
+      preferenceMatch: item.preferenceMatch,
+      hardViolations: item.hardViolations,
+      matchSummary: item.matchSummary,
+      reasons: item.reasons,
+      // Legacy fields for backwards compat with existing UI during transition
+      aiPreferenceMatches: confirmedReasons.map((r) => r.explanation),
+      recommendationReasons: confirmedReasons.slice(0, 3).map((r) => r.explanation),
+      preferencesMissed: item.reasons
+        .filter((r) => r.match_status === "mismatch" || r.match_status === "unresolved")
+        .map((r) => r.explanation),
+      pricingNote,
+      rankLabel: null, // assigned after sorting
+      rankingFactors: rankingFactorsLine,
+      subScores: item.subScores,
       verdict: b.calculatedTotalCost < budget * 0.8 ? "good_deal" : "tight",
     };
   });
+
+  // Assign deterministic labels (Guardrail D)
+  assignLabels(output);
+
+  return output;
 }
 
-function buildAiPreferenceMatches(hotelAmenities, parsedAiPreferences) {
-  const requested = Array.isArray(parsedAiPreferences?.hotelPreferences)
-    ? parsedAiPreferences.hotelPreferences
-    : [];
-  const haystack = hotelAmenities.join(" ").toLowerCase();
-  return requested
-    .filter((pref) => {
-      const normalized = String(pref).toLowerCase();
-      if (normalized.includes("pet")) return /pet|pets/.test(haystack);
-      return normalized.split(/\s+/).some((word) => word.length > 3 && haystack.includes(word));
-    })
-    .map((pref) => `AI preference matched: ${pref}`)
-    .slice(0, 3);
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+async function evaluateBundles(parsedData, preferences, parsedAiPreferences = {}) {
+  const flights = Array.isArray(parsedData?.flights) ? parsedData.flights : [];
+  const hotels = Array.isArray(parsedData?.hotels) ? parsedData.hotels : [];
+
+  if (flights.length === 0 || hotels.length === 0) return [];
+
+  const nights = calcNights(preferences.checkIn, preferences.checkOut);
+  const { bundles } = buildCandidateBundles(flights, hotels, preferences);
+  const affordableBundles = bundles.filter((b) => b.fitsInBudget);
+
+  return rankBundles(affordableBundles, nights, preferences, parsedAiPreferences, 12);
 }
+
+module.exports = { evaluateBundles };
