@@ -223,8 +223,7 @@ async function searchFlights(origin, destination, date, travelers, preferences) 
 
     const top = Array.isArray(itineraries) ? itineraries.slice(0, 5) : [];
 
-    const mapped = [];
-    for (const itinerary of top) {
+    const mapped = await Promise.all(top.map(async (itinerary) => {
       const bookingToken = itinerary?.booking_token;
 
       let bookingSite = "";
@@ -257,7 +256,7 @@ async function searchFlights(origin, destination, date, travelers, preferences) 
         : 0;
       const duration = asNumber(itinerary?.total_duration) || 0;
 
-      mapped.push({
+      return {
         airline,
         price: pricePerPerson,
         departureTime: timeOnly(firstSeg?.departure_airport?.time),
@@ -266,8 +265,8 @@ async function searchFlights(origin, destination, date, travelers, preferences) 
         duration,
         bookingSite,
         bookingUrl,
-      });
-    }
+      };
+    }));
 
     return mapped.slice(0, 5);
   } catch (_err) {

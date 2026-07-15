@@ -5,10 +5,6 @@ import { useTrip } from "../context/TripContext";
 import { popularDestinations, formatDate, SearchParams } from "../data/dummyData";
 import { loadAirports, AirportRecord } from "../utils/airports";
 
-const amenityOptions = [
-  "Pool", "Free Wi-Fi", "Breakfast", "Gym", "Spa", "Parking",
-  "AC", "Restaurant", "Bar", "Airport shuttle",
-];
 
 export default function HomeScreen() {
   const { searchParams, setSearchParams, performSearch, isLoading } = useTrip();
@@ -109,14 +105,6 @@ export default function HomeScreen() {
 
   const update = (partial: Partial<SearchParams>) => setSearchParams(partial);
 
-  const toggleAmenity = (amenity: string) => {
-    const current = sp.amenities;
-    if (current.includes(amenity)) {
-      update({ amenities: current.filter((a) => a !== amenity) });
-    } else {
-      update({ amenities: [...current, amenity] });
-    }
-  };
 
   const handleSearch = () => {
     if (!sp.fromAirport || !sp.toAirport || !sp.departureDate || !sp.returnDate) return;
@@ -715,97 +703,6 @@ export default function HomeScreen() {
               </div>
             </div>
 
-            {/* Row 3: Hotel Preferences (Min Rating, Amenities) */}
-            <div className="border-t border-slate-100 pt-5 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                {/* Hotel Min Rating */}
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 block">
-                    Hotel Rating
-                  </label>
-                  <select
-                    value={sp.minRating}
-                    onChange={(e) => update({ minRating: parseInt(e.target.value) })}
-                    className="w-full bg-[#F5F5F7] border border-transparent rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-semibold text-slate-700"
-                    id="input-min-rating"
-                  >
-                    <option value={0}>Any rating</option>
-                    <option value={3}>3★ & above</option>
-                    <option value={4}>4★ & above</option>
-                    <option value={5}>5★ only</option>
-                  </select>
-                </div>
-
-                {/* Amenity Chips */}
-                <div className="md:col-span-2">
-                  <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 block">
-                    Amenities
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {amenityOptions.map((a) => (
-                      <button
-                        key={a}
-                        type="button"
-                        onClick={() => toggleAmenity(a)}
-                        className={`text-xs px-3.5 py-1.5 rounded-full font-medium transition-all ${
-                          sp.amenities.includes(a)
-                            ? "bg-blue-600 text-white shadow-sm"
-                            : "bg-[#F5F5F7] text-slate-500 hover:bg-slate-200/70"
-                        }`}
-                      >
-                        {a}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Row 4: Flight Preferences */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 border-t border-slate-100 pt-5">
-              <div>
-                <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 block">
-                  Preferred Departure Time
-                </label>
-                <select
-                  value={sp.departureTime}
-                  onChange={(e) => update({ departureTime: e.target.value })}
-                  className="w-full bg-[#F5F5F7] border border-transparent rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-semibold text-slate-750"
-                  id="input-departure-time"
-                >
-                  <option value="morning">Morning</option>
-                  <option value="afternoon">Afternoon</option>
-                  <option value="evening">Evening</option>
-                  <option value="any">Any time</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 block">
-                  Airlines
-                </label>
-                <input
-                  type="text"
-                  value={sp.airlines === "any" ? "" : sp.airlines}
-                  onChange={(e) => update({ airlines: e.target.value || "any" })}
-                  placeholder="e.g. IndiGo, Air India"
-                  className="w-full bg-[#F5F5F7] border border-transparent rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-semibold text-slate-750"
-                  id="input-airlines"
-                />
-              </div>
-
-              <div className="flex items-center">
-                <label className="flex items-center gap-2.5 cursor-pointer text-sm font-semibold text-slate-700 select-none mt-5">
-                  <input
-                    type="checkbox"
-                    checked={sp.directOnly}
-                    onChange={(e) => update({ directOnly: e.target.checked })}
-                    className="w-4 h-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500"
-                  />
-                  Direct flights only
-                </label>
-              </div>
-            </div>
 
             {/* AI Trip Preferences */}
             <div className="border-t border-slate-100 pt-5 space-y-3">
